@@ -91,7 +91,7 @@ class WorkbookTests(unittest.TestCase):
         server = [asset("onlyoffice-documentserver.exe", 7),
                   asset("onlyoffice-documentserver_amd64.deb", 11, 2)]
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "DesktopEditors.xlsx"
+            path = Path(directory) / "ONLYOFFICE-Download-Statistics.xlsx"
             report.write_report(path, RELEASE, desktop, datetime.now(timezone.utc),
                                 server=(dict(RELEASE, tag_name="v9.9.9"), server))
             with ZipFile(path) as archive:
@@ -121,7 +121,7 @@ class WorkbookTests(unittest.TestCase):
                  asset("addon-mac-arm.zip", 10, 5),
                  asset("onlyoffice-desktopeditors_amd64.deb", 30, 6)]
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "DesktopEditors.xlsx"
+            path = Path(directory) / "ONLYOFFICE-Download-Statistics.xlsx"
             report.write_report(path, RELEASE, items, datetime.now(timezone.utc))
             with ZipFile(path) as archive:
                 book = ET.fromstring(archive.read("xl/workbook.xml"))
@@ -160,22 +160,39 @@ class DocSpaceTests(unittest.TestCase):
     def portal(self):
         return report.DocSpace("https://nct2.onlyoffice.com", "test-secret", "42")
 
+    def test_legacy_report_is_renamed_with_same_id(self):
+        portal = self.portal()
+        name = "ONLYOFFICE-Download-Statistics.xlsx"
+        old = {"id": 5, "title": "DesktopEditors.xlsx", "version": 2}
+        updated = dict(old, title=name)
+        portal.find = Mock(side_effect=[old, None, updated])
+        portal.call = Mock(return_value=updated)
+        self.assertEqual(portal.rename_legacy_report(name), updated)
+        portal.call.assert_called_once_with("PUT", "/files/file/5", json={"title": name})
+
+    def test_missing_legacy_report_does_not_rename(self):
+        portal = self.portal()
+        portal.find = Mock(return_value=None)
+        portal.call = Mock()
+        self.assertIsNone(portal.rename_legacy_report("ONLYOFFICE-Download-Statistics.xlsx"))
+        portal.call.assert_not_called()
+
     def test_folder_listing_pagination(self):
         portal = self.portal()
         portal.call = Mock(side_effect=[
             {"files": [{"title": "Other.xlsx", "id": 1}], "folders": [], "total": 2},
-            {"files": [{"title": "DesktopEditors.xlsx", "id": 5}], "folders": [], "total": 2},
-            {"id": 5, "folderId": 42, "title": "DesktopEditors.xlsx", "version": 1}])
-        self.assertEqual(portal.find("DesktopEditors.xlsx")["id"], 5)
+            {"files": [{"title": "ONLYOFFICE-Download-Statistics.xlsx", "id": 5}], "folders": [], "total": 2},
+            {"id": 5, "folderId": 42, "title": "ONLYOFFICE-Download-Statistics.xlsx", "version": 1}])
+        self.assertEqual(portal.find("ONLYOFFICE-Download-Statistics.xlsx")["id"], 5)
         self.assertEqual(portal.call.call_args_list[1].kwargs["params"]["startIndex"], 1)
 
     def test_duplicate_names_rejected(self):
         portal = self.portal()
         portal.call = Mock(return_value={"files": [
-            {"title": "DesktopEditors.xlsx", "id": 1},
-            {"title": "DesktopEditors.xlsx", "id": 2}], "total": 2})
+            {"title": "ONLYOFFICE-Download-Statistics.xlsx", "id": 1},
+            {"title": "ONLYOFFICE-Download-Statistics.xlsx", "id": 2}], "total": 2})
         with self.assertRaises(report.ReportError):
-            portal.find("DesktopEditors.xlsx")
+            portal.find("ONLYOFFICE-Download-Statistics.xlsx")
 
     def test_update_checks_id_and_version(self):
         original = {"id": 5, "version": 1}
@@ -184,7 +201,7 @@ class DocSpaceTests(unittest.TestCase):
         portal.find = Mock(side_effect=[original, updated])
         portal.call = Mock(return_value=[updated])
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "DesktopEditors.xlsx"
+            path = Path(directory) / "ONLYOFFICE-Download-Statistics.xlsx"
             path.write_bytes(b"test")
             self.assertEqual(portal.publish(path, original), updated)
         self.assertEqual(portal.call.call_args.kwargs["params"], {"createNewIfExist": "false"})
@@ -195,7 +212,7 @@ class DocSpaceTests(unittest.TestCase):
         portal.find = Mock(side_effect=[None, stored])
         portal.call = Mock(return_value=[stored])
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "DesktopEditors.xlsx"
+            path = Path(directory) / "ONLYOFFICE-Download-Statistics.xlsx"
             path.write_bytes(b"test")
             self.assertEqual(portal.publish(path, None), stored)
 
@@ -204,7 +221,7 @@ class DocSpaceTests(unittest.TestCase):
         portal.find = Mock(return_value={"id": 5, "version": 2})
         portal.call = Mock()
         with self.assertRaises(report.ReportError):
-            portal.publish(Path("DesktopEditors.xlsx"), {"id": 5, "version": 1})
+            portal.publish(Path("ONLYOFFICE-Download-Statistics.xlsx"), {"id": 5, "version": 1})
         portal.call.assert_not_called()
 
     def test_duplicate_created_by_upload_fails(self):
@@ -213,7 +230,7 @@ class DocSpaceTests(unittest.TestCase):
         portal.find = Mock(return_value=original)
         portal.call = Mock(return_value=[{"id": 6, "version": 1}])
         with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "DesktopEditors.xlsx"
+            path = Path(directory) / "ONLYOFFICE-Download-Statistics.xlsx"
             path.write_bytes(b"test")
             with self.assertRaises(report.ReportError):
                 portal.publish(path, original)

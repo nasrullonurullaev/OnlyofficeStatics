@@ -2,8 +2,9 @@
 
 Collects lifetime download counts for the latest stable releases of
 `ONLYOFFICE/DesktopEditors` and `ONLYOFFICE/DocumentServer` and publishes
-`DesktopEditors.xlsx` to ONLYOFFICE DocSpace. The filename stays unchanged to update
-the existing report.
+`ONLYOFFICE-Download-Statistics.xlsx` to ONLYOFFICE DocSpace.
+On the first run after this rename, an existing `DesktopEditors.xlsx` is renamed
+automatically, preserving its document ID. Later runs update the new filename.
 
 One sheet shows Desktop Editors in columns A–E and Document Server in columns G–K.
 Each product has its own release date, platform summary, and file details grouped into
@@ -61,6 +62,6 @@ python desktop_downloads.py
 python -m unittest discover -s tests -p test_desktop_downloads.py -v
 ```
 
-Output: `reports/DesktopEditors.xlsx`. To publish, set the environment variables
+Output: `reports/ONLYOFFICE-Download-Statistics.xlsx`. To publish, set the environment variables
 listed above and add `--publish`. `.gitignore` excludes reports, Python caches,
 and the local virtual environment.

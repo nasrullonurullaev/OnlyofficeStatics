@@ -286,10 +286,26 @@ class DocSpace:
         LOG.info("DocSpace report updated: fileId=%s, version=%s", verified["id"], verified["version"])
         return verified
 
+    def rename_legacy_report(self, name):
+        """Keep the existing document ID when migrating the original report name."""
+        legacy = self.find("DesktopEditors.xlsx")
+        if not legacy:
+            return None
+        if self.find(name):
+            raise ReportError("Report appeared during migration; rerun before renaming")
+        renamed = self.call("PUT", f"/files/file/{legacy['id']}", json={"title": name})
+        if str(renamed["id"]) != str(legacy["id"]) or renamed["title"] != name:
+            raise ReportError("Report rename could not be verified")
+        verified = self.find(name)
+        if not verified or str(verified["id"]) != str(legacy["id"]):
+            raise ReportError("Renamed report could not be found")
+        LOG.info("Report renamed; fileId=%s", verified["id"])
+        return verified
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=Path("reports/DesktopEditors.xlsx"))
+    parser.add_argument("--output", type=Path, default=Path("reports/ONLYOFFICE-Download-Statistics.xlsx"))
     parser.add_argument("--tag", default="", help="Desktop Editors tag; empty means latest stable release")
     parser.add_argument("--server-tag", default="", help="Document Server tag; empty means latest stable release")
     parser.add_argument("--timezone", default="Asia/Tashkent")
@@ -298,8 +314,8 @@ def main():
     parser.add_argument("--folder-id", default=os.getenv("DOCSPACE_FOLDER_ID", ""))
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(levelname)s: %(message)s")
-    if args.output.name != "DesktopEditors.xlsx":
-        parser.error("Output filename must be DesktopEditors.xlsx to keep the remote document stable")
+    if args.output.name != "ONLYOFFICE-Download-Statistics.xlsx":
+        parser.error("Output filename must be ONLYOFFICE-Download-Statistics.xlsx to keep the remote document stable")
     try:
         portal, expected = None, None
         if args.publish:
@@ -318,6 +334,8 @@ def main():
         LOG.info("Document Server %s: %d assets, %s downloads", server_release["tag_name"],
                  len(server_assets), sum(item["download_count"] for item in server_assets))
         if portal:
+            if expected is None:
+                expected = portal.rename_legacy_report(args.output.name)
             portal.publish(args.output, expected)
     except (ReportError, requests.RequestException, OSError, ValueError, KeyError) as exc:
         # requests exceptions can contain URLs; omit their content to avoid leaking secrets.

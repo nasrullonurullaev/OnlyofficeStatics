@@ -17,7 +17,7 @@ on:
         required: false
         default: ''
       publish:
-        description: 'Update DesktopEditors.xlsx on nct2'
+        description: 'Update ONLYOFFICE-Download-Statistics.xlsx on nct2'
         type: boolean
         required: true
         default: true
