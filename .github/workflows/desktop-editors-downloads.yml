@@ -2,8 +2,8 @@ name: ONLYOFFICE download statistics
 
 on:
   schedule:
-    # Thursdays at 09:17 Asia/Tashkent (04:17 UTC).
-    - cron: '17 4 * * 4'
+    # Thursdays at 10:00 Asia/Tashkent (05:00 UTC).
+    - cron: '0 5 * * 4'
   workflow_dispatch:
 
 permissions:

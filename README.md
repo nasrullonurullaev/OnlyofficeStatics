@@ -44,8 +44,8 @@ Open **Actions → ONLYOFFICE download statistics → Run workflow**.
 
 Every manual and scheduled workflow run updates the document on nct2.
 
-Scheduled runs update tracked releases every Thursday at **04:17 UTC**
-(09:17 Asia/Tashkent), from the default branch. GitHub may delay scheduled runs.
+Scheduled runs update tracked releases every Thursday at **05:00 UTC**
+(10:00 Asia/Tashkent), from the default branch. GitHub may delay scheduled runs.
 Reports are not committed or uploaded as Actions artifacts.
 
 ## Report rules
