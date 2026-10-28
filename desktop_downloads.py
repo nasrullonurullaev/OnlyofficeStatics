@@ -19,7 +19,7 @@ from xlsxwriter.utility import xl_rowcol_to_cell
 
 
 LOG = logging.getLogger("desktop-downloads")
-GROUPS = ("Инсталляции", "Обновления", "Аддоны")
+GROUPS = ("Installations", "Updates", "Add-ons")
 PLATFORMS = ("Windows", "Linux", "macOS")
 REPOSITORY = "ONLYOFFICE/DesktopEditors"
 
@@ -58,11 +58,11 @@ def request_json(client, method, url, **kwargs):
 def classify(name):
     lower = name.lower()
     if lower.startswith("addon-"):
-        group = "Аддоны"
+        group = "Add-ons"
     elif lower.endswith(".zip"):
-        group = "Обновления"
+        group = "Updates"
     else:
-        group = "Инсталляции"
+        group = "Installations"
 
     if lower.startswith("addon-win-") or lower.endswith((".exe", ".msi")):
         platform = "Windows"
@@ -121,7 +121,7 @@ def write_report(path, release, assets, collected_at):
     try:
         with xlsxwriter.Workbook(temporary, {"strings_to_formulas": False,
                                              "strings_to_urls": False}) as book:
-            sheet = book.add_worksheet("Статистика")
+            sheet = book.add_worksheet("Statistics")
             sheet.hide_gridlines(2)
             sheet.set_column("A:A", 24)
             sheet.set_column("B:D", 18)
@@ -142,17 +142,17 @@ def write_report(path, release, assets, collected_at):
             total = book.add_format(dict(base, bold=True, top=1, top_color="#CBD5E1", num_format="#,##0", bg_color="#E8EFF5"))
             sheet.merge_range("A1:E2", f"Desktop Editors {release['tag_name']}", title)
             published = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
-            sheet.merge_range("A3:E3", f"Дата релиза: {published.astimezone(collected_at.tzinfo):%d.%m.%Y}   ·   Обновлено: {collected_at:%d.%m.%Y %H:%M %Z}", note)
-            sheet.merge_range("A4:E4", "Источник: GitHub / ONLYOFFICE / DesktopEditors. Скачивания за всё время.", note)
-            sheet.merge_range("A6:E6", "Сводка скачиваний", platform_style)
-            sheet.write("A7", "Платформа", label_header)
-            for column, label in enumerate((*GROUPS, "Всего"), 1):
+            sheet.merge_range("A3:E3", f"Released: {published.astimezone(collected_at.tzinfo):%d.%m.%Y}   ·   Updated: {collected_at:%d.%m.%Y %H:%M %Z}", note)
+            sheet.merge_range("A4:E4", "Source: GitHub / ONLYOFFICE / DesktopEditors. Lifetime download counts.", note)
+            sheet.merge_range("A6:E6", "Download summary", platform_style)
+            sheet.write("A7", "Platform", label_header)
+            for column, label in enumerate((*GROUPS, "Total"), 1):
                 sheet.write(6, column, label, header)
-            sheet.merge_range("A13:E13", "Скачивания по файлам", platform_style)
+            sheet.merge_range("A13:E13", "Downloads by file", platform_style)
             row, group_totals, platform_cells = 14, [], {}
             for group in GROUPS:
                 sheet.merge_range(row, 0, row, 3, group, section)
-                sheet.write(row, 4, "Скачиваний", header)
+                sheet.write(row, 4, "Downloads", header)
                 row += 1
                 platform_totals = []
                 group_count = 0
@@ -168,13 +168,13 @@ def write_report(path, release, assets, collected_at):
                         sheet.write_number(row, 4, asset["download_count"], alternate_number if index % 2 == 0 else number)
                         row += 1
                     count = sum(item["download_count"] for item in entries)
-                    sheet.merge_range(row, 0, row, 3, f"Всего {platform}", total)
+                    sheet.merge_range(row, 0, row, 3, f"Total {platform}", total)
                     sheet.write_formula(row, 4, f"=SUM(E{start + 1}:E{row})", total, count)
                     platform_cells[group, platform] = xl_rowcol_to_cell(row, 4)
                     platform_totals.append(xl_rowcol_to_cell(row, 4))
                     group_count += count
                     row += 1
-                sheet.merge_range(row, 0, row, 3, f"Всего — {group.lower()}", total)
+                sheet.merge_range(row, 0, row, 3, f"Total — {group.lower()}", total)
                 formula = f"=SUM({','.join(platform_totals)})" if platform_totals else "=0"
                 sheet.write_formula(row, 4, formula, total, group_count)
                 group_totals.append(xl_rowcol_to_cell(row, 4))
@@ -188,7 +188,7 @@ def write_report(path, release, assets, collected_at):
                     sheet.write_formula(summary_row, column, f"={cell}" if cell else "=0", number, count)
                 count = sum(item["download_count"] for group in GROUPS for item in buckets[group, platform])
                 sheet.write_formula(summary_row, 4, f"=SUM(B{summary_row + 1}:D{summary_row + 1})", total, count)
-            sheet.write("A11", "Всего скачиваний", total)
+            sheet.write("A11", "Total downloads", total)
             for column, cell in enumerate(group_totals, 1):
                 count = sum(item["download_count"] for platform in PLATFORMS for item in buckets[GROUPS[column - 1], platform])
                 sheet.write_formula(10, column, f"={cell}", total, count)

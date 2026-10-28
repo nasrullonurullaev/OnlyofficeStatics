@@ -27,16 +27,16 @@ RELEASE = {"id": 10, "tag_name": "v10.0.0", "draft": False, "prerelease": False,
 class ClassificationTests(unittest.TestCase):
     def test_groups_and_platforms(self):
         cases = {
-            "DesktopEditors_x64.exe": ("Инсталляции", "Windows"),
-            "DesktopEditors_arm64.zip": ("Обновления", "Windows"),
-            "addon-win-x64.zip": ("Аддоны", "Windows"),
-            "addon-linux-aarch64.zip": ("Аддоны", "Linux"),
-            "addon-mac-v8.zip": ("Аддоны", "macOS"),
-            "ONLYOFFICE-arm.dmg": ("Инсталляции", "macOS"),
-            "DesktopEditors-x86_64.AppImage": ("Инсталляции", "Linux"),
-            "onlyoffice-desktopeditors-help_all.deb": ("Инсталляции", "Linux"),
-            "onlyoffice-desktopeditors-help-any.tar.xz": ("Инсталляции", "Linux"),
-            "onlyoffice-desktopeditors.suse12.x86_64.rpm": ("Инсталляции", "Linux"),
+            "DesktopEditors_x64.exe": ("Installations", "Windows"),
+            "DesktopEditors_arm64.zip": ("Updates", "Windows"),
+            "addon-win-x64.zip": ("Add-ons", "Windows"),
+            "addon-linux-aarch64.zip": ("Add-ons", "Linux"),
+            "addon-mac-v8.zip": ("Add-ons", "macOS"),
+            "ONLYOFFICE-arm.dmg": ("Installations", "macOS"),
+            "DesktopEditors-x86_64.AppImage": ("Installations", "Linux"),
+            "onlyoffice-desktopeditors-help_all.deb": ("Installations", "Linux"),
+            "onlyoffice-desktopeditors-help-any.tar.xz": ("Installations", "Linux"),
+            "onlyoffice-desktopeditors.suse12.x86_64.rpm": ("Installations", "Linux"),
         }
         for name, expected in cases.items():
             with self.subTest(name=name):
@@ -95,16 +95,16 @@ class WorkbookTests(unittest.TestCase):
                     cells = row.findall("s:c", NS)
                     if len(cells) >= 2 and cells[0].get("t") == "s":
                         label = strings[int(cells[0].find("s:v", NS).text)]
-                        if label.startswith("Всего"):
+                        if label.startswith("Total"):
                             numeric = next(c for c in cells if c.get("r").startswith("E"))
                             totals.setdefault(label, []).append(int(numeric.find("s:v", NS).text))
                             self.assertIsNotNone(numeric.find("s:f", NS))
-                self.assertEqual(totals["Всего Windows"], [1890, 20])
-                self.assertEqual(totals["Всего — инсталляции"], [1920])
-                self.assertEqual(totals["Всего скачиваний"], [1950])
+                self.assertEqual(totals["Total Windows"], [1890, 20])
+                self.assertEqual(totals["Total — installations"], [1920])
+                self.assertEqual(totals["Total downloads"], [1950])
                 self.assertEqual(len(xml.findall("s:hyperlinks/s:hyperlink", NS)), 0)
-                self.assertNotIn("Ссылка", strings)
-                self.assertNotIn("Скачать", strings)
+                self.assertNotIn("Link", strings)
+                self.assertNotIn("Download", strings)
                 values = {c.get("r"): c.find("s:v", NS).text for c in xml.findall(".//s:c", NS) if c.find("s:f", NS) is not None}
                 self.assertEqual([int(values[cell]) for cell in ("B8", "C8", "D8", "E8")], [1890, 20, 0, 1910])
                 self.assertEqual([int(values[cell]) for cell in ("B11", "C11", "D11", "E11")], [1920, 20, 10, 1950])

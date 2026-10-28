@@ -1,119 +1,61 @@
 # Desktop Editors Analytics
 
-## Что делает задача
+Collects lifetime download counts for the latest stable release of
+`ONLYOFFICE/DesktopEditors` and publishes `DesktopEditors.xlsx` to ONLYOFFICE DocSpace.
 
-Раз в неделю собирает из GitHub накопительное число скачиваний файлов последнего
-стабильного релиза `ONLYOFFICE/DesktopEditors` и обновляет один документ
-`DesktopEditors.xlsx` на nct2. В файле один лист `Статистика`, без старых результатов.
-При первом запуске документ создаётся, затем загружается новая версия того же документа.
+One sheet contains a platform summary and file details grouped into
+**Installations**, **Updates**, and **Add-ons**. Each run replaces the previous
+contents. No historical sheets, percentages, or hyperlinks.
 
-Сверху — компактная сводка: строки Windows, Linux, macOS, столбцы Инсталляции,
-Обновления, Аддоны и Всего. Ниже три раздела: **Инсталляции → Обновления → Аддоны**. В каждом — Windows, Linux,
-macOS, детализация по файлам, суммы по платформам и общий итог раздела. Есть общий
-итог всех скачиваний. Долей, процентов и недельных приростов нет.
-Вверху указаны версия, дата публикации и дата/время сбора (Asia/Tashkent).
-Итоги — формулы с рассчитанными значениями для просмотра без пересчёта.
-Ссылок в отчёте нет. Пустые платформы не занимают место в детализации, в сводке у них 0.
+## Setup
 
-## Файлы
+In **Settings → Secrets and variables → Actions**, add:
 
-```text
-.github/workflows/desktop-editors-downloads.yml
-desktop_downloads.py
-requirements.in
-tests/test_desktop_downloads.py
-README.md
-.gitignore
-```
-
-Workflow должен находиться в `.github/workflows/`: GitHub не обнаруживает задачи
-внутри произвольной папки. Сам скрипт, зависимости, тесты и инструкция находятся
-в корне проекта. Jenkins для этой задачи больше не требуется.
-
-`.gitignore` исключает из Git служебный Python-кэш (`__pycache__/`),
-локальное окружение (`.venv-desktop-downloads/`) и готовые отчёты (`reports/`).
-Он не влияет на сбор статистики и загрузку файла на nct2.
-
-## Настройка GitHub Actions
-
-В репозитории открыть **Settings → Secrets and variables → Actions**.
-
-| Тип | Имя | Значение |
+| Type | Name | Value |
 | --- | --- | --- |
-| Secret | `DOCSPACE_API_KEY` | API-ключ nct2 с Files & Folders Read/Write |
-| Variable | `DOCSPACE_FOLDER_ID` | Числовой ID комнаты или папки для отчёта, не корневого раздела |
-| Variable, необязательно | `DOCSPACE_URL` | По умолчанию `https://nct2.onlyoffice.com` |
+| Secret | `DOCSPACE_API_KEY` | API key with Files & Folders read/write access |
+| Variable | `DOCSPACE_FOLDER_ID` | Destination folder ID, e.g. `17974` |
+| Variable (optional) | `DOCSPACE_URL` | Defaults to `https://nct2.onlyoffice.com` |
 
-Учётная запись владельца API-ключа должна иметь право загрузки в выбранную папку.
-Ключ сам по себе не добавляет ей права на комнату. GitHub-токен отдельно создавать
-не нужно: workflow использует встроенный `github.token` с `contents: read`.
-Runner должен иметь сетевой доступ к nct2. Если портал доступен только во внутренней
-сети, замените `runs-on: ubuntu-latest` на метки вашего self-hosted runner с этим доступом.
+The API key owner must have upload access to the folder. The workflow uses the
+built-in GitHub token; no separate GitHub token is needed. The runner must be
+able to reach DocSpace.
 
-Добавить файлы в основную ветку репозитория, включить Actions и открыть
-**Actions → Desktop Editors downloads → Run workflow**.
+## Run
 
-- `release_tag`: пусто = последний стабильный релиз; можно указать `v10.0.0`.
-- `publish`: включено = обновить nct2; выключено = проверить сборку без публикации.
-  Для проверки без публикации API-ключ и папка nct2 не нужны.
+Open **Actions → Desktop Editors downloads → Run workflow**.
 
-Расписание: каждый понедельник в **09:17 Asia/Tashkent**, то есть `04:17 UTC`.
-GitHub может задерживать запуск; это время постановки задачи в очередь.
-Расписание работает из основной ветки. Ручной тег применяется только к текущему
-запуску; по расписанию всегда выбирается последний стабильный релиз.
-`concurrency` не допускает одновременной публикации нескольких запусков этого workflow.
-В неактивных публичных репозиториях GitHub может отключать расписание.
+- Leave `release_tag` empty for the latest stable release, or enter a tag such as `v10.0.0`.
+- Disable `publish` to build without uploading. DocSpace credentials are not required for this mode.
 
-Excel не коммитится в Git и не загружается в Actions artifacts. После запуска без
-публикации он существует только на временном runner, а итоги сбора видны в журнале.
-DocSpace может хранить предыдущие версии документа согласно своим настройкам;
-скрипт их не удаляет и не создаёт исторических листов внутри Excel.
+Scheduled runs use the latest stable release every Monday at **04:17 UTC**
+(09:17 Asia/Tashkent), from the default branch. GitHub may delay scheduled runs.
+Reports are not committed or uploaded as Actions artifacts.
 
-## Правила сбора
+## Report rules
 
-Используется `/releases/latest` либо стабильный релиз с указанным тегом.
-Черновики, prerelease и релизы без файлов не публикуются. Список assets обходится
-с пагинацией. Автоматические архивы исходников GitHub не являются assets релиза
-и не учитываются.
+- `addon-*`: Add-ons; other `.zip` files: Updates; remaining packages: Installations.
+- Installations include portable builds and Linux help packages.
+- Unknown platforms, invalid counters, or duplicate asset IDs stop publication.
+- Drafts, prereleases, and automatic source archives are excluded.
 
-Классификация: сначала `addon-*` → Аддоны; остальные `.zip` → Обновления;
-прочие файлы → Инсталляции, включая portable-сборки и Linux-пакеты справки.
-Платформа определяется по имени аддона или расширению пакета;
-`DesktopEditors_{x64,x86,arm,arm64}.zip` — Windows.
-Неизвестная платформа, повторный ID или некорректный счётчик останавливают публикацию.
-Новое имя следует добавить в `classify`, чтобы не получить неполный отчёт.
+## Upload errors
 
-## Публикация
+The script checks the file ID and version before and after uploading.
+Duplicate names or a new file ID cause the run to fail. Resolve duplicates and
+close the report in the editor before retrying. Uploads are not retried automatically.
+DocSpace may retain document versions; the script does not delete them.
 
-Старый Excel не скачивается: каждый запуск полностью создаёт актуальный файл.
-Скрипт проверяет метаданные документа до сбора и повторно перед загрузкой.
-Изменение ID/версии, дубликаты имени и ошибки доступа приводят к ошибке задачи.
-Загрузка: `POST /api/2.0/files/{folderId}/upload?createNewIfExist=false`, multipart-поле `file`.
-Проверяются прежний ID и новая версия в ответе, затем метаданные запрашиваются повторно.
-`storeOriginalFile` не передаётся, чтобы не менять настройки аккаунта.
+## Local use
 
-POST не повторяется автоматически: при сетевом сбое сервер мог уже сохранить документ.
-Проверьте nct2 перед повторным запуском. Не переименовывайте и не редактируйте отчёт
-одновременно с задачей: проверка версии не является атомарной блокировкой.
-Если портал создаст копию из-за блокировки/открытого редактора, задача завершится
-ошибкой; автоматически удалять документы она не будет.
-
-## Локальный запуск
-
-Из корня репозитория:
+Requires Python 3.10+.
 
 ```sh
-python3 -m venv .venv-desktop-downloads
-.venv-desktop-downloads/bin/python -m pip install -r requirements.in
-.venv-desktop-downloads/bin/python desktop_downloads.py
-.venv-desktop-downloads/bin/python -m unittest discover -s tests -p test_desktop_downloads.py -v
+python -m pip install -r requirements.in
+python desktop_downloads.py
+python -m unittest discover -s tests -p test_desktop_downloads.py -v
 ```
 
-Результат: `reports/DesktopEditors.xlsx` относительно текущего рабочего каталога.
-Для публикации задать переменные окружения из таблицы и добавить `--publish`.
-Файл сначала создаётся во временном пути, затем атомарно заменяет локальный отчёт.
-
-Документация: [загрузка файла](https://api.onlyoffice.com/docspace/api-backend/usage-api/files/folders/upload-file),
-[API-ключи](https://api.onlyoffice.com/docspace/api-backend/get-started/authentication/api-keys),
-[GitHub Releases](https://docs.github.com/en/rest/releases/releases),
-[события GitHub Actions](https://docs.github.com/en/actions/reference/workflows-and-actions/events-that-trigger-workflows#schedule).
+Output: `reports/DesktopEditors.xlsx`. To publish, set the environment variables
+listed above and add `--publish`. `.gitignore` excludes reports, Python caches,
+and the local virtual environment.
