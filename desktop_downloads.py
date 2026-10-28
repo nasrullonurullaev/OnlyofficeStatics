@@ -330,19 +330,34 @@ class DocSpace:
         return info
 
     def download(self, path, info):
+        LOG.info("Downloading existing workbook: fileId=%s", info['id'])
         link = self.call("GET", f"/files/file/{info['id']}/presigneduri")
         if not isinstance(link, str):
             raise ReportError("DocSpace returned an invalid download link")
         url = urljoin(self.root, link)
-        parsed = urlparse(url)
-        if parsed.scheme != "https" or not parsed.netloc or parsed.username:
-            raise ReportError("DocSpace returned an invalid download URL")
-        # Signed links may point to storage on another host; never forward the API key.
-        with requests.get(url, timeout=(15, 120), stream=True) as response:
-            response.raise_for_status()
-            with path.open("wb") as output:
-                for chunk in response.iter_content(1024 * 1024):
-                    output.write(chunk)
+        portal = urlparse(self.root)
+        for _ in range(6):
+            parsed = urlparse(url)
+            if parsed.scheme != "https" or not parsed.netloc or parsed.username is not None:
+                raise ReportError("DocSpace returned an invalid download URL")
+            same_origin = (parsed.hostname, parsed.port or 443) == (portal.hostname, portal.port or 443)
+            # Authorize portal handlers, but never send the API key to storage hosts.
+            client = self.client if same_origin else requests
+            with client.get(url, timeout=(15, 120), stream=True, allow_redirects=False) as response:
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location")
+                    if not location:
+                        raise ReportError("History download redirect has no destination")
+                    url = urljoin(url, location)
+                    continue
+                if not 200 <= response.status_code < 300:
+                    raise ReportError(f"History download failed: HTTP {response.status_code} "
+                                      f"from {parsed.hostname}; fileId={info['id']}")
+                with path.open("wb") as output:
+                    for chunk in response.iter_content(1024 * 1024):
+                        output.write(chunk)
+                return
+        raise ReportError("History download exceeded the redirect limit")
 
     def publish(self, path, expected):
         current = self.find(path.name)
