@@ -98,11 +98,11 @@ class WorkbookTests(unittest.TestCase):
                 self.assertEqual(len(book.findall("s:sheets/s:sheet", NS)), 1)
                 xml = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
                 cells = {c.get("r"): c for c in xml.findall(".//s:c", NS)}
-                for cell, count in {"E11": 100, "K11": 18, "H8": 7, "H9": 11,
-                                    "H10": 0, "I11": 0, "J11": 0}.items():
+                for cell, count in {"E9": 100, "E10": 100, "K9": 7, "K12": 11,
+                                    "K13": 18}.items():
                     self.assertEqual(int(cells[cell].find("s:v", NS).text), count)
-                self.assertEqual(cells["K11"].find("s:f", NS).text, "SUM(H11:J11)")
-                self.assertEqual(cells["K8"].find("s:f", NS).text, "SUM(H8:J8)")
+                self.assertEqual(cells["K13"].find("s:f", NS).text, "SUM(K9,K12)")
+                self.assertEqual(cells["K9"].find("s:f", NS).text, "SUM(K8:K8)")
                 for name, cell in cells.items():
                     formula = cell.find("s:f", NS)
                     if name[0] in "GHIJK" and formula is not None:
@@ -110,9 +110,11 @@ class WorkbookTests(unittest.TestCase):
                 strings = archive.read("xl/sharedStrings.xml").decode()
                 self.assertIn("Document Server v9.9.9", strings)
                 self.assertIn("Desktop Editors v10.0.0", strings)
+                self.assertNotIn("Download summary", strings)
+                self.assertNotIn("Total downloads", strings)
                 self.assertEqual(len(xml.findall("s:hyperlinks/s:hyperlink", NS)), 0)
 
-    def test_totals_summary_no_links_and_replacement(self):
+    def test_group_totals_without_summary_links_and_replacement(self):
         items = [asset("DesktopEditors_x64.exe", 1234),
                  asset("DesktopEditors_x86.exe", 567, 2),
                  asset("DesktopEditors_arm64.exe", 89, 3),
@@ -139,13 +141,14 @@ class WorkbookTests(unittest.TestCase):
                             self.assertIsNotNone(numeric.find("s:f", NS))
                 self.assertEqual(totals["Total Windows"], [1890, 20])
                 self.assertEqual(totals["Total — installations"], [1920])
-                self.assertEqual(totals["Total downloads"], [1950])
+                self.assertEqual(totals["Total — updates"], [20])
+                self.assertEqual(totals["Total — add-ons"], [10])
+                self.assertNotIn("Total downloads", totals)
+                self.assertNotIn("Download summary", strings)
+                self.assertNotIn("Downloads by file", strings)
                 self.assertEqual(len(xml.findall("s:hyperlinks/s:hyperlink", NS)), 0)
                 self.assertNotIn("Link", strings)
                 self.assertNotIn("Download", strings)
-                values = {c.get("r"): c.find("s:v", NS).text for c in xml.findall(".//s:c", NS) if c.find("s:f", NS) is not None}
-                self.assertEqual([int(values[cell]) for cell in ("B8", "C8", "D8", "E8")], [1890, 20, 0, 1910])
-                self.assertEqual([int(values[cell]) for cell in ("B11", "C11", "D11", "E11")], [1920, 20, 10, 1950])
             report.write_report(path, dict(RELEASE, tag_name="v10.1.0"), items[:1],
                                 datetime.now(timezone.utc))
             with ZipFile(path) as archive:

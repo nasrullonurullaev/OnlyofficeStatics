@@ -7,9 +7,10 @@ The first run creates a new report; later runs update that filename.
 Existing files with other names are left untouched.
 
 One sheet shows Desktop Editors in columns A–E and Document Server in columns G–K.
-Each product has its own release date, platform summary, and file details grouped into
+Each product has its own release date and file details grouped into
 **Installations**, **Updates**, and **Add-ons**. Each run replaces the previous
-contents. No historical sheets, percentages, or hyperlinks.
+contents. Totals appear within each platform and category. No separate summary,
+historical sheets, percentages, or hyperlinks.
 
 ## Setup
 

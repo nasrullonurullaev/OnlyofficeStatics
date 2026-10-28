@@ -133,7 +133,6 @@ def write_product(book, sheet, release, assets, collected_at, column_offset=0,
     section = book.add_format(dict(base, bold=True, font_size=13, font_color="#FFFFFF", bg_color="#24476B"))
     platform_style = book.add_format(dict(base, bold=True, bg_color="#E8EFF5"))
     header = book.add_format(dict(base, bold=True, bg_color="#24476B", font_color="#FFFFFF", align="right"))
-    label_header = book.add_format(dict(base, bold=True, bg_color="#24476B", font_color="#FFFFFF"))
     text = book.add_format(base)
     number = book.add_format(dict(base, num_format="#,##0", align="right"))
     alternate = book.add_format(dict(base, bg_color="#F5F8FB"))
@@ -143,12 +142,7 @@ def write_product(book, sheet, release, assets, collected_at, column_offset=0,
     published = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
     sheet.merge_range(address("A3:E3"), f"Released: {published.astimezone(collected_at.tzinfo):%d.%m.%Y}   ·   Updated: {collected_at:%d.%m.%Y %H:%M %Z}", note)
     sheet.merge_range(address("A4:E4"), f"Source: GitHub / {repository}. Lifetime download counts.", note)
-    sheet.merge_range(address("A6:E6"), "Download summary", platform_style)
-    sheet.write(address("A7"), "Platform", label_header)
-    for column, label in enumerate((*GROUPS, "Total"), 1):
-        sheet.write(6, column_offset + column, label, header)
-    sheet.merge_range(address("A13:E13"), "Downloads by file", platform_style)
-    row, group_totals, platform_cells = 14, {}, {}
+    row = 5
     for group in GROUPS:
         if not any(buckets[group, platform] for platform in PLATFORMS):
             continue
@@ -171,29 +165,12 @@ def write_product(book, sheet, release, assets, collected_at, column_offset=0,
             count = sum(item["download_count"] for item in entries)
             sheet.merge_range(row, column_offset, row, column_offset + 3, f"Total {platform}", total)
             sheet.write_formula(row, column_offset + 4, f"=SUM({download_column}{start + 1}:{download_column}{row})", total, count)
-            platform_cells[group, platform] = xl_rowcol_to_cell(row, column_offset + 4)
             platform_totals.append(xl_rowcol_to_cell(row, column_offset + 4))
             group_count += count
             row += 1
         sheet.merge_range(row, column_offset, row, column_offset + 3, f"Total — {group.lower()}", total)
         sheet.write_formula(row, column_offset + 4, f"=SUM({','.join(platform_totals)})", total, group_count)
-        group_totals[group] = xl_rowcol_to_cell(row, column_offset + 4)
         row += 2
-    # Summary links to detail subtotals, so each file is counted exactly once.
-    for summary_row, platform in enumerate(PLATFORMS, 7):
-        sheet.write(summary_row, column_offset, platform, text)
-        for column, group in enumerate(GROUPS, 1):
-            count = sum(item["download_count"] for item in buckets[group, platform])
-            cell = platform_cells.get((group, platform))
-            sheet.write_formula(summary_row, column_offset + column, f"={cell}" if cell else "=0", number, count)
-        count = sum(item["download_count"] for group in GROUPS for item in buckets[group, platform])
-        sheet.write_formula(summary_row, column_offset + 4, f"=SUM({address(f'B{summary_row + 1}')}:{address(f'D{summary_row + 1}')})", total, count)
-    sheet.write(address("A11"), "Total downloads", total)
-    for column, group in enumerate(GROUPS, 1):
-        cell = group_totals.get(group)
-        count = sum(item["download_count"] for platform in PLATFORMS for item in buckets[group, platform])
-        sheet.write_formula(10, column_offset + column, f"={cell}" if cell else "=0", total, count)
-    sheet.write_formula(address("E11"), f"=SUM({address('B11:D11')})", total, sum(item["download_count"] for item in assets))
     return row
 
 
