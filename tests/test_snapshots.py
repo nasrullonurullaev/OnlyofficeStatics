@@ -7,7 +7,6 @@ from test_desktop_downloads import report
 
 
 class SnapshotTests(unittest.TestCase):
-
     def test_failed_history_download_does_not_publish(self):
         portal = Mock()
         portal.find.return_value = {'id': 5, 'version': 1}
@@ -19,7 +18,6 @@ class SnapshotTests(unittest.TestCase):
             self.assertEqual(report.main(), 1)
         collect.assert_not_called()
         portal.publish.assert_not_called()
-
 
     def test_signed_download_does_not_forward_the_api_key(self):
         portal = report.DocSpace('https://nct2.onlyoffice.com', 'secret', '42')
@@ -54,7 +52,6 @@ class SnapshotTests(unittest.TestCase):
         portal.call = Mock(return_value='https://storage.example.com/report?key=private')
         response = MagicMock()
         response.__enter__.return_value.status_code = 403
-        response.__enter__.return_value.raise_for_status.side_effect = report.requests.HTTPError('private URL')
         with tempfile.TemporaryDirectory() as directory, patch.object(report.requests, 'get', return_value=response):
             path = Path(directory) / 'history.xlsx'
             path.write_bytes(b'previous report')

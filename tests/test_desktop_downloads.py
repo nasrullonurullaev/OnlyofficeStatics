@@ -8,7 +8,6 @@ SCRIPT = Path(__file__).resolve().parents[1] / "desktop_downloads.py"
 SPEC = importlib.util.spec_from_file_location("desktop_downloads", SCRIPT)
 report = importlib.util.module_from_spec(SPEC)
 SPEC.loader.exec_module(report)
-NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 
 def asset(name, count, identifier=1):
@@ -92,8 +91,6 @@ class CollectionTests(unittest.TestCase):
         get.return_value = dict(RELEASE, prerelease=True)
         with self.assertRaises(report.ReportError):
             report.collect(Mock(), "v10.1.0-beta")
-
-
 
 
 class DocSpaceTests(unittest.TestCase):

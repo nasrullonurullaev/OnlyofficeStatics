@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from history_report import HistoryError, PRODUCTS, GROUPS, PLATFORMS, update_report, load_history
+from history_report import HistoryError, PRODUCTS, add_run, load_history, run_label, save_history
 
 
 LOG = logging.getLogger("desktop-downloads")
@@ -259,26 +259,22 @@ def main():
                 history = Path(directory) / "history.xlsx"
                 portal.download(history, expected)
             github = session(os.getenv("GITHUB_TOKEN"), github=True)
-            try:
-                state = load_history(history)
-            except HistoryError:
-                raise
-            except Exception as exc:
-                raise HistoryError(f'Existing history cannot be read ({type(exc).__name__}); report will not be overwritten') from exc
+            state = load_history(history)
             products = {
                 name: collect_tracked(github, repository, {
                     release_id: entry for (product, release_id), entry in state['releases'].items()
                     if product == name})
                 for name, repository in PRODUCTS.items()}
             now = datetime.now(ZoneInfo(args.timezone))
-            state = update_report(args.output, products, now, history_path=history)
+            add_run(state, products, run_label(state['runs'], now))
+            save_history(args.output, state)
             for product, releases in products.items():
                 LOG.info("%s: %d releases, %d assets", product, len(releases),
                          sum(len(assets) for _, assets in releases))
             LOG.info("History updated: %d run columns", len(state["runs"]))
             if portal:
                 portal.publish(args.output, expected)
-    except (ReportError, HistoryError, requests.RequestException, OSError, ValueError, KeyError) as exc:
+    except (ReportError, requests.RequestException, OSError, ValueError, KeyError) as exc:
         # requests exceptions can contain URLs; omit their content to avoid leaking secrets.
         message = str(exc) if isinstance(exc, (ReportError, HistoryError)) else type(exc).__name__
         LOG.error("%s", message)

@@ -92,13 +92,18 @@ def read_metadata(sheet):
 def load_history(path):
     if path is None:
         return empty_history()
-    workbook = load_workbook(path, data_only=False)
     try:
-        if METADATA not in workbook.sheetnames:
-            raise HistoryError('The existing workbook uses an old format; start with a new document')
-        return read_metadata(workbook[METADATA])
-    finally:
-        workbook.close()
+        workbook = load_workbook(path, data_only=False)
+        try:
+            if METADATA not in workbook.sheetnames:
+                raise HistoryError('The existing workbook uses an old format; start with a new document')
+            return read_metadata(workbook[METADATA])
+        finally:
+            workbook.close()
+    except HistoryError:
+        raise
+    except Exception as exc:
+        raise HistoryError(f'Existing history cannot be read ({type(exc).__name__}); report will not be overwritten') from exc
 
 
 def write_total(sheet, row, label, references, values, styles):
@@ -212,12 +217,7 @@ def save_history(path, state):
 
 
 def update_report(path, products, collected_at, history_path=None):
-    try:
-        state = load_history(history_path)
-    except HistoryError:
-        raise
-    except Exception as exc:
-        raise HistoryError(f'Existing history cannot be read ({type(exc).__name__}); report will not be overwritten') from exc
+    state = load_history(history_path)
     add_run(state, products, run_label(state['runs'], collected_at))
     save_history(path, state)
     return state
