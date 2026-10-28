@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Current DesktopEditors release downloads; one workbook, one worksheet."""
+"""Desktop Editors and Document Server downloads; one workbook, one worksheet."""
 
 import argparse
 from datetime import datetime
@@ -15,7 +15,7 @@ import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
 import xlsxwriter
-from xlsxwriter.utility import xl_rowcol_to_cell
+from xlsxwriter.utility import xl_rowcol_to_cell, xl_cell_to_rowcol, xl_col_to_name
 
 
 LOG = logging.getLogger("desktop-downloads")
@@ -78,8 +78,8 @@ def classify(name):
     return group, platform
 
 
-def collect(client, tag=""):
-    root = f"https://api.github.com/repos/{REPOSITORY}"
+def collect(client, tag="", repository=REPOSITORY):
+    root = f"https://api.github.com/repos/{repository}"
     endpoint = f"tags/{quote(tag, safe='')}" if tag else "latest"
     release = request_json(client, "GET", f"{root}/releases/{endpoint}")
     if release.get("draft") or release.get("prerelease") or not release.get("published_at"):
@@ -110,11 +110,96 @@ def collect(client, tag=""):
     return release, assets
 
 
-def write_report(path, release, assets, collected_at):
-    """Rebuild rather than import: old sheets and stale rows must disappear."""
+def write_product(book, sheet, release, assets, collected_at, column_offset=0,
+                  product="Desktop Editors", repository=REPOSITORY):
+    """Write an independent five-column product block on the shared worksheet."""
     buckets = {(group, platform): [] for group in GROUPS for platform in PLATFORMS}
     for asset in assets:
         buckets[classify(asset["name"])].append(asset)
+
+    def address(value):
+        def shift(match):
+            column = xl_cell_to_rowcol(match.group(1) + "1")[1]
+            return xl_col_to_name(column + column_offset) + match.group(2)
+        return re.sub(r"([A-Z]+)([0-9]*)", shift, value)
+
+    download_column = xl_col_to_name(column_offset + 4)
+    sheet.set_column(address("A:A"), 24)
+    sheet.set_column(address("B:D"), 18)
+    sheet.set_column(address("E:E"), 20)
+    base = {"font_name": "Calibri", "font_size": 11, "font_color": "#243746", "valign": "vcenter"}
+    title = book.add_format(dict(base, bold=True, font_size=22, font_color="#17365D"))
+    note = book.add_format(dict(base, font_size=10, font_color="#64748B"))
+    section = book.add_format(dict(base, bold=True, font_size=13, font_color="#FFFFFF", bg_color="#24476B"))
+    platform_style = book.add_format(dict(base, bold=True, bg_color="#E8EFF5"))
+    header = book.add_format(dict(base, bold=True, bg_color="#24476B", font_color="#FFFFFF", align="right"))
+    label_header = book.add_format(dict(base, bold=True, bg_color="#24476B", font_color="#FFFFFF"))
+    text = book.add_format(base)
+    number = book.add_format(dict(base, num_format="#,##0", align="right"))
+    alternate = book.add_format(dict(base, bg_color="#F5F8FB"))
+    alternate_number = book.add_format(dict(base, bg_color="#F5F8FB", num_format="#,##0", align="right"))
+    total = book.add_format(dict(base, bold=True, top=1, top_color="#CBD5E1", num_format="#,##0", bg_color="#E8EFF5"))
+    sheet.merge_range(address("A1:E2"), f"{product} {release['tag_name']}", title)
+    published = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
+    sheet.merge_range(address("A3:E3"), f"Released: {published.astimezone(collected_at.tzinfo):%d.%m.%Y}   ·   Updated: {collected_at:%d.%m.%Y %H:%M %Z}", note)
+    sheet.merge_range(address("A4:E4"), f"Source: GitHub / {repository}. Lifetime download counts.", note)
+    sheet.merge_range(address("A6:E6"), "Download summary", platform_style)
+    sheet.write(address("A7"), "Platform", label_header)
+    for column, label in enumerate((*GROUPS, "Total"), 1):
+        sheet.write(6, column_offset + column, label, header)
+    sheet.merge_range(address("A13:E13"), "Downloads by file", platform_style)
+    row, group_totals, platform_cells = 14, {}, {}
+    for group in GROUPS:
+        if not any(buckets[group, platform] for platform in PLATFORMS):
+            continue
+        sheet.merge_range(row, column_offset, row, column_offset + 3, group, section)
+        sheet.write(row, column_offset + 4, "Downloads", header)
+        row += 1
+        platform_totals = []
+        group_count = 0
+        for platform in PLATFORMS:
+            entries = sorted(buckets[group, platform], key=lambda item: item["name"].lower())
+            if not entries:
+                continue
+            sheet.merge_range(row, column_offset, row, column_offset + 4, platform, platform_style)
+            row += 1
+            start = row
+            for index, asset in enumerate(entries):
+                sheet.merge_range(row, column_offset, row, column_offset + 3, asset["name"], alternate if index % 2 == 0 else text)
+                sheet.write_number(row, column_offset + 4, asset["download_count"], alternate_number if index % 2 == 0 else number)
+                row += 1
+            count = sum(item["download_count"] for item in entries)
+            sheet.merge_range(row, column_offset, row, column_offset + 3, f"Total {platform}", total)
+            sheet.write_formula(row, column_offset + 4, f"=SUM({download_column}{start + 1}:{download_column}{row})", total, count)
+            platform_cells[group, platform] = xl_rowcol_to_cell(row, column_offset + 4)
+            platform_totals.append(xl_rowcol_to_cell(row, column_offset + 4))
+            group_count += count
+            row += 1
+        sheet.merge_range(row, column_offset, row, column_offset + 3, f"Total — {group.lower()}", total)
+        formula = f"=SUM({','.join(platform_totals)})" if platform_totals else "=0"
+        sheet.write_formula(row, column_offset + 4, formula, total, group_count)
+        group_totals[group] = xl_rowcol_to_cell(row, column_offset + 4)
+        row += 2
+    # Summary links to detail subtotals, so each file is counted exactly once.
+    for summary_row, platform in enumerate(PLATFORMS, 7):
+        sheet.write(summary_row, column_offset, platform, text)
+        for column, group in enumerate(GROUPS, 1):
+            count = sum(item["download_count"] for item in buckets[group, platform])
+            cell = platform_cells.get((group, platform))
+            sheet.write_formula(summary_row, column_offset + column, f"={cell}" if cell else "=0", number, count)
+        count = sum(item["download_count"] for group in GROUPS for item in buckets[group, platform])
+        sheet.write_formula(summary_row, column_offset + 4, f"=SUM({address(f'B{summary_row + 1}')}:{address(f'D{summary_row + 1}')})", total, count)
+    sheet.write(address("A11"), "Total downloads", total)
+    for column, group in enumerate(GROUPS, 1):
+        cell = group_totals.get(group)
+        count = sum(item["download_count"] for platform in PLATFORMS for item in buckets[GROUPS[column - 1], platform])
+        sheet.write_formula(10, column_offset + column, f"={cell}" if cell else "=0", total, count)
+    sheet.write_formula(address("E11"), f"=SUM({address('B11:D11')})", total, sum(item["download_count"] for item in assets))
+    return row
+
+
+def write_report(path, release, assets, collected_at, server=None):
+    """Rebuild rather than import: old sheets and stale rows must disappear."""
     path.parent.mkdir(parents=True, exist_ok=True)
     handle, temporary = tempfile.mkstemp(suffix=".xlsx", dir=path.parent)
     os.close(handle)
@@ -123,79 +208,18 @@ def write_report(path, release, assets, collected_at):
                                              "strings_to_urls": False}) as book:
             sheet = book.add_worksheet("Statistics")
             sheet.hide_gridlines(2)
-            sheet.set_column("A:A", 24)
-            sheet.set_column("B:D", 18)
-            sheet.set_column("E:E", 20)
             sheet.set_default_row(24)
-            sheet.set_zoom(90)
-            base = {"font_name": "Calibri", "font_size": 11, "font_color": "#243746", "valign": "vcenter"}
-            title = book.add_format(dict(base, bold=True, font_size=22, font_color="#17365D"))
-            note = book.add_format(dict(base, font_size=10, font_color="#64748B"))
-            section = book.add_format(dict(base, bold=True, font_size=13, font_color="#FFFFFF", bg_color="#24476B"))
-            platform_style = book.add_format(dict(base, bold=True, bg_color="#E8EFF5"))
-            header = book.add_format(dict(base, bold=True, bg_color="#24476B", font_color="#FFFFFF", align="right"))
-            label_header = book.add_format(dict(base, bold=True, bg_color="#24476B", font_color="#FFFFFF"))
-            text = book.add_format(base)
-            number = book.add_format(dict(base, num_format="#,##0", align="right"))
-            alternate = book.add_format(dict(base, bg_color="#F5F8FB"))
-            alternate_number = book.add_format(dict(base, bg_color="#F5F8FB", num_format="#,##0", align="right"))
-            total = book.add_format(dict(base, bold=True, top=1, top_color="#CBD5E1", num_format="#,##0", bg_color="#E8EFF5"))
-            sheet.merge_range("A1:E2", f"Desktop Editors {release['tag_name']}", title)
-            published = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
-            sheet.merge_range("A3:E3", f"Released: {published.astimezone(collected_at.tzinfo):%d.%m.%Y}   ·   Updated: {collected_at:%d.%m.%Y %H:%M %Z}", note)
-            sheet.merge_range("A4:E4", "Source: GitHub / ONLYOFFICE / DesktopEditors. Lifetime download counts.", note)
-            sheet.merge_range("A6:E6", "Download summary", platform_style)
-            sheet.write("A7", "Platform", label_header)
-            for column, label in enumerate((*GROUPS, "Total"), 1):
-                sheet.write(6, column, label, header)
-            sheet.merge_range("A13:E13", "Downloads by file", platform_style)
-            row, group_totals, platform_cells = 14, [], {}
-            for group in GROUPS:
-                sheet.merge_range(row, 0, row, 3, group, section)
-                sheet.write(row, 4, "Downloads", header)
-                row += 1
-                platform_totals = []
-                group_count = 0
-                for platform in PLATFORMS:
-                    entries = sorted(buckets[group, platform], key=lambda item: item["name"].lower())
-                    if not entries:
-                        continue
-                    sheet.merge_range(row, 0, row, 4, platform, platform_style)
-                    row += 1
-                    start = row
-                    for index, asset in enumerate(entries):
-                        sheet.merge_range(row, 0, row, 3, asset["name"], alternate if index % 2 == 0 else text)
-                        sheet.write_number(row, 4, asset["download_count"], alternate_number if index % 2 == 0 else number)
-                        row += 1
-                    count = sum(item["download_count"] for item in entries)
-                    sheet.merge_range(row, 0, row, 3, f"Total {platform}", total)
-                    sheet.write_formula(row, 4, f"=SUM(E{start + 1}:E{row})", total, count)
-                    platform_cells[group, platform] = xl_rowcol_to_cell(row, 4)
-                    platform_totals.append(xl_rowcol_to_cell(row, 4))
-                    group_count += count
-                    row += 1
-                sheet.merge_range(row, 0, row, 3, f"Total — {group.lower()}", total)
-                formula = f"=SUM({','.join(platform_totals)})" if platform_totals else "=0"
-                sheet.write_formula(row, 4, formula, total, group_count)
-                group_totals.append(xl_rowcol_to_cell(row, 4))
-                row += 2
-            # Summary links to detail subtotals, so each file is counted exactly once.
-            for summary_row, platform in enumerate(PLATFORMS, 7):
-                sheet.write(summary_row, 0, platform, text)
-                for column, group in enumerate(GROUPS, 1):
-                    count = sum(item["download_count"] for item in buckets[group, platform])
-                    cell = platform_cells.get((group, platform))
-                    sheet.write_formula(summary_row, column, f"={cell}" if cell else "=0", number, count)
-                count = sum(item["download_count"] for group in GROUPS for item in buckets[group, platform])
-                sheet.write_formula(summary_row, 4, f"=SUM(B{summary_row + 1}:D{summary_row + 1})", total, count)
-            sheet.write("A11", "Total downloads", total)
-            for column, cell in enumerate(group_totals, 1):
-                count = sum(item["download_count"] for platform in PLATFORMS for item in buckets[GROUPS[column - 1], platform])
-                sheet.write_formula(10, column, f"={cell}", total, count)
-            sheet.write_formula("E11", "=SUM(B11:D11)", total, sum(item["download_count"] for item in assets))
-            sheet.set_portrait()
+            sheet.set_zoom(70 if server else 90)
+            last_row = write_product(book, sheet, release, assets, collected_at)
+            if server:
+                sheet.set_column("F:F", 4)
+                server_release, server_assets = server
+                last_row = max(last_row, write_product(
+                    book, sheet, server_release, server_assets, collected_at,
+                    column_offset=6, product="Document Server", repository="ONLYOFFICE/DocumentServer"))
+            sheet.set_landscape() if server else sheet.set_portrait()
             sheet.fit_to_pages(1, 0)
-            sheet.print_area(0, 0, row - 1, 4)
+            sheet.print_area(0, 0, last_row - 1, 10 if server else 4)
         os.replace(temporary, path)
     finally:
         if os.path.exists(temporary):
@@ -266,7 +290,8 @@ class DocSpace:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("reports/DesktopEditors.xlsx"))
-    parser.add_argument("--tag", default="", help="Empty means latest stable GitHub release")
+    parser.add_argument("--tag", default="", help="Desktop Editors tag; empty means latest stable release")
+    parser.add_argument("--server-tag", default="", help="Document Server tag; empty means latest stable release")
     parser.add_argument("--timezone", default="Asia/Tashkent")
     parser.add_argument("--publish", action="store_true")
     parser.add_argument("--docspace-url", default=os.getenv("DOCSPACE_URL", "https://nct2.onlyoffice.com"))
@@ -283,11 +308,15 @@ def main():
                 raise ReportError("Set DOCSPACE_API_KEY via GitHub Actions Secrets")
             portal = DocSpace(args.docspace_url, token, args.folder_id)
             expected = portal.find(args.output.name)
-        release, assets = collect(session(os.getenv("GITHUB_TOKEN"), github=True), args.tag)
+        github = session(os.getenv("GITHUB_TOKEN"), github=True)
+        release, assets = collect(github, args.tag)
+        server_release, server_assets = collect(github, args.server_tag, "ONLYOFFICE/DocumentServer")
         now = datetime.now(ZoneInfo(args.timezone))
-        write_report(args.output, release, assets, now)
-        LOG.info("%s: %d assets, %s downloads; report: %s", release["tag_name"],
+        write_report(args.output, release, assets, now, server=(server_release, server_assets))
+        LOG.info("Desktop Editors %s: %d assets, %s downloads; report: %s", release["tag_name"],
                  len(assets), sum(item["download_count"] for item in assets), args.output)
+        LOG.info("Document Server %s: %d assets, %s downloads", server_release["tag_name"],
+                 len(server_assets), sum(item["download_count"] for item in server_assets))
         if portal:
             portal.publish(args.output, expected)
     except (ReportError, requests.RequestException, OSError, ValueError, KeyError) as exc:

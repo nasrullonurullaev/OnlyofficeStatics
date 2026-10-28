@@ -1,4 +1,4 @@
-name: Desktop Editors downloads
+name: ONLYOFFICE download statistics
 
 on:
   schedule:
@@ -7,7 +7,12 @@ on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: 'Release tag; empty = latest stable release'
+        description: 'Desktop Editors tag; empty = latest stable release'
+        type: string
+        required: false
+        default: ''
+      server_release_tag:
+        description: 'Document Server tag; empty = latest stable release'
         type: string
         required: false
         default: ''
@@ -58,9 +63,10 @@ jobs:
           DOCSPACE_URL: ${{ vars.DOCSPACE_URL || 'https://nct2.onlyoffice.com' }}
           DOCSPACE_FOLDER_ID: ${{ vars.DOCSPACE_FOLDER_ID }}
           RELEASE_TAG: ${{ inputs.release_tag || '' }}
+          SERVER_RELEASE_TAG: ${{ inputs.server_release_tag || '' }}
           PUBLISH: ${{ github.event_name == 'schedule' || inputs.publish }}
         run: |
-          args=(--tag "$RELEASE_TAG" --timezone Asia/Tashkent)
+          args=(--tag "$RELEASE_TAG" --server-tag "$SERVER_RELEASE_TAG" --timezone Asia/Tashkent)
           if [[ "$PUBLISH" == "true" ]]; then
             args+=(--publish)
           fi

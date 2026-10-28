@@ -1,9 +1,12 @@
-# Desktop Editors Analytics
+# ONLYOFFICE Download Analytics
 
-Collects lifetime download counts for the latest stable release of
-`ONLYOFFICE/DesktopEditors` and publishes `DesktopEditors.xlsx` to ONLYOFFICE DocSpace.
+Collects lifetime download counts for the latest stable releases of
+`ONLYOFFICE/DesktopEditors` and `ONLYOFFICE/DocumentServer` and publishes
+`DesktopEditors.xlsx` to ONLYOFFICE DocSpace. The filename stays unchanged to update
+the existing report.
 
-One sheet contains a platform summary and file details grouped into
+One sheet shows Desktop Editors in columns A–E and Document Server in columns G–K.
+Each product has its own release date, platform summary, and file details grouped into
 **Installations**, **Updates**, and **Add-ons**. Each run replaces the previous
 contents. No historical sheets, percentages, or hyperlinks.
 
@@ -23,12 +26,13 @@ able to reach DocSpace.
 
 ## Run
 
-Open **Actions → Desktop Editors downloads → Run workflow**.
+Open **Actions → ONLYOFFICE download statistics → Run workflow**.
 
 - Leave `release_tag` empty for the latest stable release, or enter a tag such as `v10.0.0`.
+- `server_release_tag` selects the Document Server release independently; empty means latest stable.
 - Disable `publish` to build without uploading. DocSpace credentials are not required for this mode.
 
-Scheduled runs use the latest stable release every Monday at **04:17 UTC**
+Scheduled runs use the latest stable release of each product every Monday at **04:17 UTC**
 (09:17 Asia/Tashkent), from the default branch. GitHub may delay scheduled runs.
 Reports are not committed or uploaded as Actions artifacts.
 
@@ -38,6 +42,7 @@ Reports are not committed or uploaded as Actions artifacts.
 - Installations include portable builds and Linux help packages.
 - Unknown platforms, invalid counters, or duplicate asset IDs stop publication.
 - Drafts, prereleases, and automatic source archives are excluded.
+- Empty categories are omitted from file details. A collection error for either product stops publication.
 
 ## Upload errors
 

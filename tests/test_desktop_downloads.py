@@ -37,6 +37,11 @@ class ClassificationTests(unittest.TestCase):
             "onlyoffice-desktopeditors-help_all.deb": ("Installations", "Linux"),
             "onlyoffice-desktopeditors-help-any.tar.xz": ("Installations", "Linux"),
             "onlyoffice-desktopeditors.suse12.x86_64.rpm": ("Installations", "Linux"),
+            "onlyoffice-documentserver.exe": ("Installations", "Windows"),
+            "onlyoffice-documentserver_amd64.deb": ("Installations", "Linux"),
+            "onlyoffice-documentserver_arm64.deb": ("Installations", "Linux"),
+            "onlyoffice-documentserver.x86_64.rpm": ("Installations", "Linux"),
+            "onlyoffice-documentserver.aarch64.rpm": ("Installations", "Linux"),
         }
         for name, expected in cases.items():
             with self.subTest(name=name):
@@ -48,6 +53,13 @@ class ClassificationTests(unittest.TestCase):
 
 
 class CollectionTests(unittest.TestCase):
+    @patch.object(report, "request_json")
+    def test_documentserver_repository_is_used(self, get):
+        get.side_effect = [RELEASE, [asset("onlyoffice-documentserver.exe", 5)]]
+        report.collect(Mock(), repository="ONLYOFFICE/DocumentServer")
+        for call in get.call_args_list:
+            self.assertIn("/repos/ONLYOFFICE/DocumentServer/releases/", call.args[2])
+
     @patch.object(report, "request_json")
     def test_assets_are_paginated(self, get):
         first = [asset("DesktopEditors_x64.exe", n, n) for n in range(100)]
@@ -74,6 +86,33 @@ class CollectionTests(unittest.TestCase):
 
 
 class WorkbookTests(unittest.TestCase):
+    def test_products_share_one_sheet_with_independent_totals(self):
+        desktop = [asset("DesktopEditors_x64.exe", 100)]
+        server = [asset("onlyoffice-documentserver.exe", 7),
+                  asset("onlyoffice-documentserver_amd64.deb", 11, 2)]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "DesktopEditors.xlsx"
+            report.write_report(path, RELEASE, desktop, datetime.now(timezone.utc),
+                                server=(dict(RELEASE, tag_name="v9.9.9"), server))
+            with ZipFile(path) as archive:
+                book = ET.fromstring(archive.read("xl/workbook.xml"))
+                self.assertEqual(len(book.findall("s:sheets/s:sheet", NS)), 1)
+                xml = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
+                cells = {c.get("r"): c for c in xml.findall(".//s:c", NS)}
+                for cell, count in {"E11": 100, "K11": 18, "H8": 7, "H9": 11,
+                                    "H10": 0, "I11": 0, "J11": 0}.items():
+                    self.assertEqual(int(cells[cell].find("s:v", NS).text), count)
+                self.assertEqual(cells["K11"].find("s:f", NS).text, "SUM(H11:J11)")
+                self.assertEqual(cells["K8"].find("s:f", NS).text, "SUM(H8:J8)")
+                for name, cell in cells.items():
+                    formula = cell.find("s:f", NS)
+                    if name[0] in "GHIJK" and formula is not None:
+                        self.assertNotRegex(formula.text, r"\b[A-E][0-9]+")
+                strings = archive.read("xl/sharedStrings.xml").decode()
+                self.assertIn("Document Server v9.9.9", strings)
+                self.assertIn("Desktop Editors v10.0.0", strings)
+                self.assertEqual(len(xml.findall("s:hyperlinks/s:hyperlink", NS)), 0)
+
     def test_totals_summary_no_links_and_replacement(self):
         items = [asset("DesktopEditors_x64.exe", 1234),
                  asset("DesktopEditors_x86.exe", 567, 2),
