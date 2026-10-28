@@ -123,59 +123,79 @@ def write_report(path, release, assets, collected_at):
                                              "strings_to_urls": False}) as book:
             sheet = book.add_worksheet("Статистика")
             sheet.hide_gridlines(2)
-            sheet.freeze_panes(8, 0)
-            sheet.set_column("A:A", 66)
-            sheet.set_column("B:B", 20)
-            sheet.set_column("C:C", 17)
-            sheet.set_default_row(22)
-            base = {"font_name": "Calibri", "font_size": 11}
-            title = book.add_format(dict(base, bold=True, font_size=18, font_color="#FFFFFF", bg_color="#17365D"))
+            sheet.set_column("A:A", 24)
+            sheet.set_column("B:D", 18)
+            sheet.set_column("E:E", 20)
+            sheet.set_default_row(24)
+            sheet.set_zoom(90)
+            base = {"font_name": "Calibri", "font_size": 11, "font_color": "#243746", "valign": "vcenter"}
+            title = book.add_format(dict(base, bold=True, font_size=22, font_color="#17365D"))
+            note = book.add_format(dict(base, font_size=10, font_color="#64748B"))
             section = book.add_format(dict(base, bold=True, font_size=13, font_color="#FFFFFF", bg_color="#24476B"))
             platform_style = book.add_format(dict(base, bold=True, bg_color="#E8EFF5"))
+            header = book.add_format(dict(base, bold=True, bg_color="#24476B", font_color="#FFFFFF", align="right"))
+            label_header = book.add_format(dict(base, bold=True, bg_color="#24476B", font_color="#FFFFFF"))
             text = book.add_format(base)
-            number = book.add_format(dict(base, num_format="#,##0"))
-            total = book.add_format(dict(base, bold=True, top=1, num_format="#,##0", bg_color="#E8EFF5"))
-            link = book.add_format(dict(base, font_color="#0563C1", underline=1))
-            sheet.merge_range("A1:C2", f"Desktop Editors {release['tag_name']}", title)
+            number = book.add_format(dict(base, num_format="#,##0", align="right"))
+            alternate = book.add_format(dict(base, bg_color="#F5F8FB"))
+            alternate_number = book.add_format(dict(base, bg_color="#F5F8FB", num_format="#,##0", align="right"))
+            total = book.add_format(dict(base, bold=True, top=1, top_color="#CBD5E1", num_format="#,##0", bg_color="#E8EFF5"))
+            sheet.merge_range("A1:E2", f"Desktop Editors {release['tag_name']}", title)
             published = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
-            sheet.write("A3", f"Релиз опубликован: {published.astimezone(collected_at.tzinfo):%d.%m.%Y}", text)
-            sheet.write("A4", f"Статистика собрана: {collected_at:%d.%m.%Y %H:%M %Z}", text)
-            sheet.write("A5", "Накопительное число скачиваний файлов с GitHub", text)
-            sheet.write_url("A6", release["html_url"], link, "Источник: GitHub — релиз DesktopEditors")
-            sheet.write_row("A8", ["Файл / платформа", "Скачиваний", "Ссылка"], platform_style)
-            row, group_totals = 9, []
+            sheet.merge_range("A3:E3", f"Дата релиза: {published.astimezone(collected_at.tzinfo):%d.%m.%Y}   ·   Обновлено: {collected_at:%d.%m.%Y %H:%M %Z}", note)
+            sheet.merge_range("A4:E4", "Источник: GitHub / ONLYOFFICE / DesktopEditors. Скачивания за всё время.", note)
+            sheet.merge_range("A6:E6", "Сводка скачиваний", platform_style)
+            sheet.write("A7", "Платформа", label_header)
+            for column, label in enumerate((*GROUPS, "Всего"), 1):
+                sheet.write(6, column, label, header)
+            sheet.merge_range("A13:E13", "Скачивания по файлам", platform_style)
+            row, group_totals, platform_cells = 14, [], {}
             for group in GROUPS:
-                sheet.merge_range(row, 0, row, 2, group, section)
+                sheet.merge_range(row, 0, row, 3, group, section)
+                sheet.write(row, 4, "Скачиваний", header)
                 row += 1
                 platform_totals = []
                 group_count = 0
                 for platform in PLATFORMS:
-                    sheet.merge_range(row, 0, row, 2, platform, platform_style)
+                    entries = sorted(buckets[group, platform], key=lambda item: item["name"].lower())
+                    if not entries:
+                        continue
+                    sheet.merge_range(row, 0, row, 4, platform, platform_style)
                     row += 1
                     start = row
-                    entries = sorted(buckets[group, platform], key=lambda item: item["name"].lower())
-                    for asset in entries:
-                        sheet.write_string(row, 0, asset["name"], text)
-                        sheet.write_number(row, 1, asset["download_count"], number)
-                        sheet.write_url(row, 2, asset["browser_download_url"], link, "Скачать")
+                    for index, asset in enumerate(entries):
+                        sheet.merge_range(row, 0, row, 3, asset["name"], alternate if index % 2 == 0 else text)
+                        sheet.write_number(row, 4, asset["download_count"], alternate_number if index % 2 == 0 else number)
                         row += 1
                     count = sum(item["download_count"] for item in entries)
-                    sheet.write(row, 0, f"Всего {platform}", total)
-                    formula = f"=SUM(B{start + 1}:B{row})" if entries else "=0"
-                    sheet.write_formula(row, 1, formula, total, count)
-                    platform_totals.append(xl_rowcol_to_cell(row, 1))
+                    sheet.merge_range(row, 0, row, 3, f"Всего {platform}", total)
+                    sheet.write_formula(row, 4, f"=SUM(E{start + 1}:E{row})", total, count)
+                    platform_cells[group, platform] = xl_rowcol_to_cell(row, 4)
+                    platform_totals.append(xl_rowcol_to_cell(row, 4))
                     group_count += count
-                    row += 2
-                sheet.write(row, 0, f"Всего — {group.lower()}", total)
-                sheet.write_formula(row, 1, f"=SUM({','.join(platform_totals)})", total, group_count)
-                group_totals.append(xl_rowcol_to_cell(row, 1))
-                row += 3
-            sheet.write(row, 0, "Всего скачиваний", total)
-            sheet.write_formula(row, 1, f"=SUM({','.join(group_totals)})", total,
-                                sum(item["download_count"] for item in assets))
-            sheet.set_landscape()
+                    row += 1
+                sheet.merge_range(row, 0, row, 3, f"Всего — {group.lower()}", total)
+                formula = f"=SUM({','.join(platform_totals)})" if platform_totals else "=0"
+                sheet.write_formula(row, 4, formula, total, group_count)
+                group_totals.append(xl_rowcol_to_cell(row, 4))
+                row += 2
+            # Summary links to detail subtotals, so each file is counted exactly once.
+            for summary_row, platform in enumerate(PLATFORMS, 7):
+                sheet.write(summary_row, 0, platform, text)
+                for column, group in enumerate(GROUPS, 1):
+                    count = sum(item["download_count"] for item in buckets[group, platform])
+                    cell = platform_cells.get((group, platform))
+                    sheet.write_formula(summary_row, column, f"={cell}" if cell else "=0", number, count)
+                count = sum(item["download_count"] for group in GROUPS for item in buckets[group, platform])
+                sheet.write_formula(summary_row, 4, f"=SUM(B{summary_row + 1}:D{summary_row + 1})", total, count)
+            sheet.write("A11", "Всего скачиваний", total)
+            for column, cell in enumerate(group_totals, 1):
+                count = sum(item["download_count"] for platform in PLATFORMS for item in buckets[GROUPS[column - 1], platform])
+                sheet.write_formula(10, column, f"={cell}", total, count)
+            sheet.write_formula("E11", "=SUM(B11:D11)", total, sum(item["download_count"] for item in assets))
+            sheet.set_portrait()
             sheet.fit_to_pages(1, 0)
-            sheet.print_area(0, 0, row, 2)
+            sheet.print_area(0, 0, row - 1, 4)
         os.replace(temporary, path)
     finally:
         if os.path.exists(temporary):

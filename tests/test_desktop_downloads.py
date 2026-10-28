@@ -74,7 +74,7 @@ class CollectionTests(unittest.TestCase):
 
 
 class WorkbookTests(unittest.TestCase):
-    def test_totals_cached_values_links_and_replacement(self):
+    def test_totals_summary_no_links_and_replacement(self):
         items = [asset("DesktopEditors_x64.exe", 1234),
                  asset("DesktopEditors_x86.exe", 567, 2),
                  asset("DesktopEditors_arm64.exe", 89, 3),
@@ -96,12 +96,18 @@ class WorkbookTests(unittest.TestCase):
                     if len(cells) >= 2 and cells[0].get("t") == "s":
                         label = strings[int(cells[0].find("s:v", NS).text)]
                         if label.startswith("Всего"):
-                            totals.setdefault(label, []).append(int(cells[1].find("s:v", NS).text))
-                            self.assertIsNotNone(cells[1].find("s:f", NS))
-                self.assertEqual(totals["Всего Windows"], [1890, 20, 0])
+                            numeric = next(c for c in cells if c.get("r").startswith("E"))
+                            totals.setdefault(label, []).append(int(numeric.find("s:v", NS).text))
+                            self.assertIsNotNone(numeric.find("s:f", NS))
+                self.assertEqual(totals["Всего Windows"], [1890, 20])
                 self.assertEqual(totals["Всего — инсталляции"], [1920])
                 self.assertEqual(totals["Всего скачиваний"], [1950])
-                self.assertEqual(len(xml.findall("s:hyperlinks/s:hyperlink", NS)), 7)
+                self.assertEqual(len(xml.findall("s:hyperlinks/s:hyperlink", NS)), 0)
+                self.assertNotIn("Ссылка", strings)
+                self.assertNotIn("Скачать", strings)
+                values = {c.get("r"): c.find("s:v", NS).text for c in xml.findall(".//s:c", NS) if c.find("s:f", NS) is not None}
+                self.assertEqual([int(values[cell]) for cell in ("B8", "C8", "D8", "E8")], [1890, 20, 0, 1910])
+                self.assertEqual([int(values[cell]) for cell in ("B11", "C11", "D11", "E11")], [1920, 20, 10, 1950])
             report.write_report(path, dict(RELEASE, tag_name="v10.1.0"), items[:1],
                                 datetime.now(timezone.utc))
             with ZipFile(path) as archive:
