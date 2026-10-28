@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""All stable product releases with one persistent history column per run."""
+"""Track the latest two releases initially, then add newly published releases."""
 
 import argparse
 from datetime import datetime
@@ -14,7 +14,7 @@ from zoneinfo import ZoneInfo
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-from history_report import HistoryError, PRODUCTS, GROUPS, PLATFORMS, update_report
+from history_report import HistoryError, PRODUCTS, GROUPS, PLATFORMS, update_report, load_history
 
 
 LOG = logging.getLogger("desktop-downloads")
@@ -112,7 +112,7 @@ def collect_assets(client, release, repository, allow_empty=False):
     return assets
 
 
-def collect_all(client, repository=REPOSITORY):
+def collect_tracked(client, repository=REPOSITORY, known_releases=None):
     releases, page = [], 1
     while True:
         batch = request_json(client, "GET", f"https://api.github.com/repos/{repository}/releases",
@@ -126,8 +126,14 @@ def collect_all(client, repository=REPOSITORY):
         page += 1
     if not releases:
         raise ReportError(f"No published stable releases in {repository}")
-    LOG.info("Collecting %s: %d stable releases", repository, len(releases))
     releases.sort(key=lambda item: (item["published_at"], item["id"]), reverse=True)
+    if known_releases:
+        newest = max(entry['published'] for entry in known_releases.values())
+        releases = [item for item in releases if str(item['id']) in known_releases
+                    or item['published_at'] > newest]
+    else:
+        releases = releases[:2]
+    LOG.info("Collecting %s: %d tracked releases", repository, len(releases))
     result = []
     for release in releases:
         # An empty historical release is still displayed; a malformed response stops publication.
@@ -252,7 +258,17 @@ def main():
                 history = Path(directory) / "history.xlsx"
                 portal.download(history, expected)
             github = session(os.getenv("GITHUB_TOKEN"), github=True)
-            products = {name: collect_all(github, repository) for name, repository in PRODUCTS.items()}
+            try:
+                state = load_history(history)
+            except HistoryError:
+                raise
+            except Exception as exc:
+                raise HistoryError(f'Existing history cannot be read ({type(exc).__name__}); report will not be overwritten') from exc
+            products = {
+                name: collect_tracked(github, repository, {
+                    release_id: entry for (product, release_id), entry in state['releases'].items()
+                    if product == name})
+                for name, repository in PRODUCTS.items()}
             now = datetime.now(ZoneInfo(args.timezone))
             state = update_report(args.output, products, now, history_path=history)
             for product, releases in products.items():

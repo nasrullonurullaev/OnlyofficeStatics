@@ -15,7 +15,7 @@ class SnapshotTests(unittest.TestCase):
         with patch('sys.argv', ['report', '--publish']), \
                 patch.dict('os.environ', {'DOCSPACE_API_KEY': 'test'}), \
                 patch.object(report, 'DocSpace', return_value=portal), \
-                patch.object(report, 'collect_all') as collect, self.assertLogs(report.LOG, level='ERROR'):
+                patch.object(report, 'collect_tracked') as collect, self.assertLogs(report.LOG, level='ERROR'):
             self.assertEqual(report.main(), 1)
         collect.assert_not_called()
         portal.publish.assert_not_called()

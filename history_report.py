@@ -119,7 +119,7 @@ def write_product(book, product, state, styles):
     sheet.set_column(0, 0, 64)
     sheet.set_column(1, len(state['runs']), 22)
     sheet.merge_range(0, 0, 1, max(1, len(state['runs'])), product, styles['title'])
-    sheet.write_string(2, 0, 'Lifetime downloads · all published stable releases', styles['note'])
+    sheet.write_string(2, 0, 'Lifetime downloads · tracked stable releases', styles['note'])
     sheet.write_row(3, 0, ['Release / artifact', *state['runs']], styles['header'])
     releases = sorted((key for key in state['releases'] if key[0] == product),
                       key=lambda key: (state['releases'][key]['published'], state['releases'][key]['tag']), reverse=True)

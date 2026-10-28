@@ -1,12 +1,15 @@
 # ONLYOFFICE Download Analytics
 
-Collects lifetime download counts for all published stable releases of
+Collects lifetime download counts for tracked stable releases of
 `ONLYOFFICE/DesktopEditors` and `ONLYOFFICE/DocumentServer` and publishes
 `ONLYOFFICE-Download-Statistics.xlsx` to ONLYOFFICE DocSpace.
 The first run creates a new report; later runs update that filename.
 Existing files with other names are left untouched.
 
 Two permanent visible sheets: **Desktop Editors** and **Document Server**.
+The first run selects the two latest published stable releases per product.
+Later runs refresh tracked releases and add releases published after the newest
+tracked release. Older untracked releases are not imported; tracked history is retained.
 Rows contain releases (newest first), categories, platforms, and artifact names.
 Each run appends a date column on the right. New releases appear above older ones;
 old counts move together with their artifacts. No new dated sheets are created.
@@ -41,7 +44,7 @@ Open **Actions → ONLYOFFICE download statistics → Run workflow**.
 
 - Disable `publish` to build without uploading. DocSpace credentials are not required for this mode.
 
-Scheduled runs collect all stable releases every Monday at **04:17 UTC**
+Scheduled runs update tracked releases every Monday at **04:17 UTC**
 (09:17 Asia/Tashkent), from the default branch. GitHub may delay scheduled runs.
 Reports are not committed or uploaded as Actions artifacts.
 

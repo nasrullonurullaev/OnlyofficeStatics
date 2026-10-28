@@ -131,7 +131,7 @@ class CollectionTests(unittest.TestCase):
             with patch('sys.argv', ['report', '--publish', '--output', str(output)]), \
                     patch.dict('os.environ', {'DOCSPACE_API_KEY': 'test'}), \
                     patch.object(report, 'DocSpace', return_value=portal), \
-                    patch.object(report, 'collect_all', side_effect=[
+                    patch.object(report, 'collect_tracked', side_effect=[
                         [product_data(count=20)], [product_data(count=30, name='onlyoffice-documentserver.exe')]]):
                 self.assertEqual(report.main(), 0)
             state = load_history(output)
@@ -139,16 +139,40 @@ class CollectionTests(unittest.TestCase):
             self.assertEqual(len(state['runs']), 2)
             portal.publish.assert_called_once_with(output, portal.find.return_value)
 
-    def test_collects_all_stable_releases_with_pagination_and_skips_drafts(self):
+    def test_selects_stable_releases_with_pagination_and_skips_drafts(self):
         first = [dict(RELEASE, id=i, tag_name=f'v{i}', draft=True) for i in range(100)]
         older = dict(RELEASE, id=9, tag_name='v9', published_at='2026-09-01T00:00:00Z')
         beta = dict(RELEASE, id=11, prerelease=True)
         with patch.object(report, 'request_json', side_effect=[first, [older, beta, RELEASE]]) as request, \
                 patch.object(report, 'collect_assets', return_value=[]) as collect:
-            releases = report.collect_all(Mock())
+            releases = report.collect_tracked(Mock())
         self.assertEqual([release['id'] for release, assets in releases], [10, 9])
         self.assertEqual(request.call_args.kwargs['params']['page'], 2)
         self.assertEqual(collect.call_count, 2)
+
+    def test_first_run_selects_only_latest_two(self):
+        releases = [product_data(i)[0] for i in (7, 10, 8, 9)]
+        with patch.object(report, 'request_json', return_value=releases), \
+                patch.object(report, 'collect_assets', return_value=[]):
+            result = report.collect_tracked(Mock())
+        self.assertEqual([release['id'] for release, _ in result], [10, 9])
+
+    def test_later_runs_refresh_tracked_and_add_all_new_releases(self):
+        releases = [product_data(i)[0] for i in (7, 9, 10, 11, 12)]
+        known = {'9': {'published': releases[1]['published_at']},
+                 '10': {'published': releases[2]['published_at']}}
+        with patch.object(report, 'request_json', return_value=releases), \
+                patch.object(report, 'collect_assets', return_value=[]):
+            result = report.collect_tracked(Mock(), known_releases=known)
+        self.assertEqual([release['id'] for release, _ in result], [12, 11, 10, 9])
+
+    def test_no_new_release_does_not_import_older_versions(self):
+        releases = [product_data(i)[0] for i in (7, 9, 10)]
+        known = {str(item['id']): {'published': item['published_at']} for item in releases[1:]}
+        with patch.object(report, 'request_json', return_value=releases), \
+                patch.object(report, 'collect_assets', return_value=[]):
+            result = report.collect_tracked(Mock(), known_releases=known)
+        self.assertEqual([release['id'] for release, _ in result], [10, 9])
 
     def test_failed_collection_does_not_publish(self):
         portal = Mock()
@@ -156,7 +180,7 @@ class CollectionTests(unittest.TestCase):
         with patch('sys.argv', ['report', '--publish']), \
                 patch.dict('os.environ', {'DOCSPACE_API_KEY': 'test'}), \
                 patch.object(report, 'DocSpace', return_value=portal), \
-                patch.object(report, 'collect_all', side_effect=report.ReportError('Incomplete collection')), \
+                patch.object(report, 'collect_tracked', side_effect=report.ReportError('Incomplete collection')), \
                 self.assertLogs(report.LOG, level='ERROR'):
             self.assertEqual(report.main(), 1)
         portal.publish.assert_not_called()
