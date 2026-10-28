@@ -160,23 +160,6 @@ class DocSpaceTests(unittest.TestCase):
     def portal(self):
         return report.DocSpace("https://nct2.onlyoffice.com", "test-secret", "42")
 
-    def test_legacy_report_is_renamed_with_same_id(self):
-        portal = self.portal()
-        name = "ONLYOFFICE-Download-Statistics.xlsx"
-        old = {"id": 5, "title": "DesktopEditors.xlsx", "version": 2}
-        updated = dict(old, title=name)
-        portal.find = Mock(side_effect=[old, None, updated])
-        portal.call = Mock(return_value=updated)
-        self.assertEqual(portal.rename_legacy_report(name), updated)
-        portal.call.assert_called_once_with("PUT", "/files/file/5", json={"title": name})
-
-    def test_missing_legacy_report_does_not_rename(self):
-        portal = self.portal()
-        portal.find = Mock(return_value=None)
-        portal.call = Mock()
-        self.assertIsNone(portal.rename_legacy_report("ONLYOFFICE-Download-Statistics.xlsx"))
-        portal.call.assert_not_called()
-
     def test_folder_listing_pagination(self):
         portal = self.portal()
         portal.call = Mock(side_effect=[

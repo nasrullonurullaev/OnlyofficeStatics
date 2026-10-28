@@ -3,8 +3,8 @@
 Collects lifetime download counts for the latest stable releases of
 `ONLYOFFICE/DesktopEditors` and `ONLYOFFICE/DocumentServer` and publishes
 `ONLYOFFICE-Download-Statistics.xlsx` to ONLYOFFICE DocSpace.
-On the first run after this rename, an existing `DesktopEditors.xlsx` is renamed
-automatically, preserving its document ID. Later runs update the new filename.
+The first run creates a new report; later runs update that filename.
+Existing files with other names are left untouched.
 
 One sheet shows Desktop Editors in columns A–E and Document Server in columns G–K.
 Each product has its own release date, platform summary, and file details grouped into
