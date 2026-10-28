@@ -176,8 +176,7 @@ def write_product(book, sheet, release, assets, collected_at, column_offset=0,
             group_count += count
             row += 1
         sheet.merge_range(row, column_offset, row, column_offset + 3, f"Total — {group.lower()}", total)
-        formula = f"=SUM({','.join(platform_totals)})" if platform_totals else "=0"
-        sheet.write_formula(row, column_offset + 4, formula, total, group_count)
+        sheet.write_formula(row, column_offset + 4, f"=SUM({','.join(platform_totals)})", total, group_count)
         group_totals[group] = xl_rowcol_to_cell(row, column_offset + 4)
         row += 2
     # Summary links to detail subtotals, so each file is counted exactly once.
@@ -192,7 +191,7 @@ def write_product(book, sheet, release, assets, collected_at, column_offset=0,
     sheet.write(address("A11"), "Total downloads", total)
     for column, group in enumerate(GROUPS, 1):
         cell = group_totals.get(group)
-        count = sum(item["download_count"] for platform in PLATFORMS for item in buckets[GROUPS[column - 1], platform])
+        count = sum(item["download_count"] for platform in PLATFORMS for item in buckets[group, platform])
         sheet.write_formula(10, column_offset + column, f"={cell}" if cell else "=0", total, count)
     sheet.write_formula(address("E11"), f"=SUM({address('B11:D11')})", total, sum(item["download_count"] for item in assets))
     return row

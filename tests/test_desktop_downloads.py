@@ -16,12 +16,11 @@ NS = {"s": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
 
 def asset(name, count, identifier=1):
     return {"id": identifier, "name": name, "download_count": count,
-            "state": "uploaded", "browser_download_url": f"https://github.com/example/{name}"}
+            "state": "uploaded"}
 
 
 RELEASE = {"id": 10, "tag_name": "v10.0.0", "draft": False, "prerelease": False,
-           "published_at": "2026-10-13T10:18:58Z",
-           "html_url": "https://github.com/ONLYOFFICE/DesktopEditors/releases/tag/v10.0.0"}
+           "published_at": "2026-10-13T10:18:58Z"}
 
 
 class ClassificationTests(unittest.TestCase):
