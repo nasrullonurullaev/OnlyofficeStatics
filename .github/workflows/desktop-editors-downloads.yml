@@ -5,12 +5,6 @@ on:
     # Mondays at 09:17 Asia/Tashkent (04:17 UTC).
     - cron: '17 4 * * 1'
   workflow_dispatch:
-    inputs:
-      publish:
-        description: 'Update ONLYOFFICE-Download-Statistics.xlsx on nct2'
-        type: boolean
-        required: true
-        default: true
 
 permissions:
   contents: read
@@ -52,10 +46,4 @@ jobs:
           DOCSPACE_API_KEY: ${{ secrets.DOCSPACE_API_KEY }}
           DOCSPACE_URL: ${{ vars.DOCSPACE_URL || 'https://nct2.onlyoffice.com' }}
           DOCSPACE_FOLDER_ID: ${{ vars.DOCSPACE_FOLDER_ID }}
-          PUBLISH: ${{ github.event_name == 'schedule' || inputs.publish }}
-        run: |
-          args=(--timezone Asia/Tashkent)
-          if [[ "$PUBLISH" == "true" ]]; then
-            args+=(--publish)
-          fi
-          python desktop_downloads.py "${args[@]}"
+        run: python desktop_downloads.py --timezone Asia/Tashkent --publish
