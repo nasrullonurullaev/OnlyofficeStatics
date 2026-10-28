@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-"""Weekly snapshots of the latest two stable releases of both products."""
+"""All stable product releases with one persistent history column per run."""
 
 import argparse
-from copy import copy
 from datetime import datetime
 import logging
 import os
@@ -15,15 +14,10 @@ from zoneinfo import ZoneInfo
 import requests
 from requests.adapters import HTTPAdapter
 from urllib3.util.retry import Retry
-import xlsxwriter
-from openpyxl import load_workbook
-from openpyxl.workbook.properties import CalcProperties
-from xlsxwriter.utility import xl_rowcol_to_cell, xl_cell_to_rowcol, xl_col_to_name
+from history_report import HistoryError, PRODUCTS, GROUPS, PLATFORMS, update_report
 
 
 LOG = logging.getLogger("desktop-downloads")
-GROUPS = ("Installations", "Updates", "Add-ons")
-PLATFORMS = ("Windows", "Linux", "macOS")
 REPOSITORY = "ONLYOFFICE/DesktopEditors"
 
 
@@ -87,6 +81,11 @@ def collect(client, tag="", repository=REPOSITORY):
     release = request_json(client, "GET", f"{root}/releases/{endpoint}")
     if release.get("draft") or release.get("prerelease") or not release.get("published_at"):
         raise ReportError("A published stable release is required")
+    return release, collect_assets(client, release, repository)
+
+
+def collect_assets(client, release, repository, allow_empty=False):
+    root = f"https://api.github.com/repos/{repository}"
     release_id = release["id"]
     assets, page = [], 1
     # Explicitly paginate assets; the list embedded in a release can be truncated.
@@ -99,7 +98,7 @@ def collect(client, tag="", repository=REPOSITORY):
         if len(batch) < 100:
             break
         page += 1
-    if not assets:
+    if not assets and not allow_empty:
         raise ReportError("Release has no assets; existing report will not be replaced")
     seen = set()
     for asset in assets:
@@ -109,187 +108,32 @@ def collect(client, tag="", repository=REPOSITORY):
         count = asset.get("download_count")
         if type(count) is not int or count < 0 or asset.get("state") != "uploaded":
             raise ReportError(f"Invalid counter or incomplete asset: {asset['name']}")
-        classify(asset["name"])
-    return release, assets
+        asset["category"] = classify(asset["name"])
+    return assets
 
 
-def collect_recent(client, tag="", repository=REPOSITORY):
-    latest = collect(client, tag, repository)
-    cutoff = latest[0]["published_at"]
-    candidates, page = [], 1
+def collect_all(client, repository=REPOSITORY):
+    releases, page = [], 1
     while True:
         batch = request_json(client, "GET", f"https://api.github.com/repos/{repository}/releases",
                              params={"per_page": 100, "page": page})
         if not isinstance(batch, list):
             raise ReportError("Invalid GitHub releases response")
-        candidates.extend(item for item in batch if not item.get("draft")
-                          and not item.get("prerelease") and item.get("published_at")
-                          and item["id"] != latest[0]["id"] and item["published_at"] <= cutoff)
+        releases.extend(item for item in batch if not item.get("draft")
+                        and not item.get("prerelease") and item.get("published_at"))
         if len(batch) < 100:
             break
         page += 1
-    if not candidates:
-        return [latest]
-    previous = max(candidates, key=lambda item: (item["published_at"], item["id"]))
-    return [latest, collect(client, previous["tag_name"], repository)]
-
-
-def write_product(book, sheet, release, assets, collected_at, column_offset=0,
-                  product="Desktop Editors", repository=REPOSITORY, row_offset=0,
-                  release_label=""):
-    """Write an independent five-column product block on the shared worksheet."""
-    buckets = {(group, platform): [] for group in GROUPS for platform in PLATFORMS}
-    for asset in assets:
-        buckets[classify(asset["name"])].append(asset)
-
-    def address(value):
-        def shift(match):
-            column = xl_cell_to_rowcol(match.group(1) + "1")[1]
-            row = str(int(match.group(2)) + row_offset) if match.group(2) else ""
-            return xl_col_to_name(column + column_offset) + row
-        return re.sub(r"([A-Z]+)([0-9]*)", shift, value)
-
-    download_column = xl_col_to_name(column_offset + 4)
-    sheet.set_column(address("A:A"), 24)
-    sheet.set_column(address("B:D"), 18)
-    sheet.set_column(address("E:E"), 20)
-    base = {"font_name": "Calibri", "font_size": 11, "font_color": "#243746", "valign": "vcenter"}
-    title = book.add_format(dict(base, bold=True, font_size=22, font_color="#17365D"))
-    note = book.add_format(dict(base, font_size=10, font_color="#64748B"))
-    section = book.add_format(dict(base, bold=True, font_size=13, font_color="#FFFFFF", bg_color="#24476B"))
-    platform_style = book.add_format(dict(base, bold=True, bg_color="#E8EFF5"))
-    header = book.add_format(dict(base, bold=True, bg_color="#24476B", font_color="#FFFFFF", align="right"))
-    text = book.add_format(base)
-    number = book.add_format(dict(base, num_format="#,##0", align="right"))
-    alternate = book.add_format(dict(base, bg_color="#F5F8FB"))
-    alternate_number = book.add_format(dict(base, bg_color="#F5F8FB", num_format="#,##0", align="right"))
-    total = book.add_format(dict(base, bold=True, top=1, top_color="#CBD5E1", num_format="#,##0", bg_color="#E8EFF5"))
-    label = f" — {release_label}" if release_label else ""
-    sheet.merge_range(address("A1:E2"), f"{product} {release['tag_name']}{label}", title)
-    published = datetime.fromisoformat(release["published_at"].replace("Z", "+00:00"))
-    sheet.merge_range(address("A3:E3"), f"Released: {published.astimezone(collected_at.tzinfo):%d.%m.%Y}   ·   Updated: {collected_at:%d.%m.%Y %H:%M %Z}", note)
-    sheet.merge_range(address("A4:E4"), f"Source: GitHub / {repository}. Lifetime download counts.", note)
-    row = row_offset + 5
-    for group in GROUPS:
-        if not any(buckets[group, platform] for platform in PLATFORMS):
-            continue
-        sheet.merge_range(row, column_offset, row, column_offset + 3, group, section)
-        sheet.write(row, column_offset + 4, "Downloads", header)
-        row += 1
-        platform_totals = []
-        group_count = 0
-        for platform in PLATFORMS:
-            entries = sorted(buckets[group, platform], key=lambda item: item["name"].lower())
-            if not entries:
-                continue
-            sheet.merge_range(row, column_offset, row, column_offset + 4, platform, platform_style)
-            row += 1
-            start = row
-            for index, asset in enumerate(entries):
-                sheet.merge_range(row, column_offset, row, column_offset + 3, asset["name"], alternate if index % 2 == 0 else text)
-                sheet.write_number(row, column_offset + 4, asset["download_count"], alternate_number if index % 2 == 0 else number)
-                row += 1
-            count = sum(item["download_count"] for item in entries)
-            sheet.merge_range(row, column_offset, row, column_offset + 3, f"Total {platform}", total)
-            sheet.write_formula(row, column_offset + 4, f"=SUM({download_column}{start + 1}:{download_column}{row})", total, count)
-            platform_totals.append(xl_rowcol_to_cell(row, column_offset + 4))
-            group_count += count
-            row += 1
-        sheet.merge_range(row, column_offset, row, column_offset + 3, f"Total — {group.lower()}", total)
-        sheet.write_formula(row, column_offset + 4, f"=SUM({','.join(platform_totals)})", total, group_count)
-        row += 2
-    return row
-
-
-def snapshot_name(existing, collected_at):
-    name = collected_at.strftime("%Y-%m-%d")
-    if name not in existing:
-        return name
-    base = collected_at.strftime("%Y-%m-%d %H-%M-%S")
-    name, number = base, 2
-    while name in existing:
-        name = f"{base}-{number}"
-        number += 1
-    return name
-
-
-def append_snapshot(history, snapshot, name):
-    source_book = load_workbook(snapshot)
-    source = source_book.active
-    target = history.create_sheet(name)
-    for row in source:
-        for cell in row:
-            new = target.cell(cell.row, cell.column, cell.value)
-            new.data_type = cell.data_type
-            if cell.has_style:
-                for attribute in ("font", "fill", "border", "alignment", "protection", "number_format"):
-                    setattr(new, attribute, copy(getattr(cell, attribute)))
-    for merged in source.merged_cells.ranges:
-        target.merge_cells(str(merged))
-    for key, dimension in source.column_dimensions.items():
-        target.column_dimensions[key] = copy(dimension)
-    for key, dimension in source.row_dimensions.items():
-        target.row_dimensions[key] = copy(dimension)
-    for attribute in ("sheet_format", "sheet_properties", "views", "page_setup", "page_margins", "print_options"):
-        setattr(target, attribute, copy(getattr(source, attribute)))
-    target.print_area = f"A1:K{source.max_row}"
-    for sheet in history:
-        sheet.sheet_view.tabSelected = False
-    target.sheet_view.tabSelected = True
-    history.active = len(history.worksheets) - 1
-    history.calculation = CalcProperties(calcMode="auto", fullCalcOnLoad=True, forceFullCalc=True)
-    source_book.close()
-    history.save(snapshot)
-
-
-def write_report(path, release, assets, collected_at, server=None, previous=None,
-                 server_previous=None, history_path=None):
-    """Append a dated snapshot; never replace the existing history with an empty workbook."""
-    history = None
-    if history_path is not None:
-        try:
-            history = load_workbook(history_path)
-        except Exception as exc:
-            raise ReportError("Existing report cannot be read; history will not be overwritten") from exc
-    name = snapshot_name(history.sheetnames if history else [], collected_at)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    handle, temporary = tempfile.mkstemp(suffix=".xlsx", dir=path.parent)
-    os.close(handle)
-    try:
-        with xlsxwriter.Workbook(temporary, {"strings_to_formulas": False,
-                                             "strings_to_urls": False}) as book:
-            sheet = book.add_worksheet(name)
-            sheet.hide_gridlines(2)
-            sheet.set_default_row(24)
-            sheet.set_zoom(70 if server else 90)
-            last_row = write_product(book, sheet, release, assets, collected_at, release_label="Latest")
-            if server:
-                sheet.set_column("F:F", 4)
-                server_release, server_assets = server
-                last_row = max(last_row, write_product(
-                    book, sheet, server_release, server_assets, collected_at,
-                    column_offset=6, product="Document Server", repository="ONLYOFFICE/DocumentServer",
-                    release_label="Latest"))
-            if previous or server_previous:
-                start = last_row + 1
-                if previous:
-                    last_row = write_product(book, sheet, *previous, collected_at,
-                                             row_offset=start, release_label="Previous")
-                if server_previous:
-                    last_row = max(last_row, write_product(book, sheet, *server_previous, collected_at,
-                        column_offset=6, product="Document Server", repository="ONLYOFFICE/DocumentServer",
-                        row_offset=start, release_label="Previous"))
-            sheet.set_landscape() if server else sheet.set_portrait()
-            sheet.fit_to_pages(1, 0)
-            sheet.print_area(0, 0, last_row - 1, 10 if server else 4)
-        if history:
-            append_snapshot(history, temporary, name)
-        os.replace(temporary, path)
-    finally:
-        if history:
-            history.close()
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+    if not releases:
+        raise ReportError(f"No published stable releases in {repository}")
+    LOG.info("Collecting %s: %d stable releases", repository, len(releases))
+    releases.sort(key=lambda item: (item["published_at"], item["id"]), reverse=True)
+    result = []
+    for release in releases:
+        # An empty historical release is still displayed; a malformed response stops publication.
+        assets = collect_assets(client, release, repository, allow_empty=True)
+        result.append((release, assets))
+    return result
 
 
 class DocSpace:
@@ -386,8 +230,6 @@ class DocSpace:
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=Path("reports/ONLYOFFICE-Download-Statistics.xlsx"))
-    parser.add_argument("--tag", default="", help="Desktop Editors tag; empty means latest stable release")
-    parser.add_argument("--server-tag", default="", help="Document Server tag; empty means latest stable release")
     parser.add_argument("--timezone", default="Asia/Tashkent")
     parser.add_argument("--publish", action="store_true")
     parser.add_argument("--docspace-url", default=os.getenv("DOCSPACE_URL", "https://nct2.onlyoffice.com"))
@@ -410,22 +252,18 @@ def main():
                 history = Path(directory) / "history.xlsx"
                 portal.download(history, expected)
             github = session(os.getenv("GITHUB_TOKEN"), github=True)
-            desktop = collect_recent(github, args.tag)
-            server = collect_recent(github, args.server_tag, "ONLYOFFICE/DocumentServer")
+            products = {name: collect_all(github, repository) for name, repository in PRODUCTS.items()}
             now = datetime.now(ZoneInfo(args.timezone))
-            write_report(args.output, *desktop[0], now, server=server[0],
-                         previous=desktop[1] if len(desktop) > 1 else None,
-                         server_previous=server[1] if len(server) > 1 else None,
-                         history_path=history)
-            for product, releases in (("Desktop Editors", desktop), ("Document Server", server)):
-                for release, assets in releases:
-                    LOG.info("%s %s: %d assets, %s downloads", product, release["tag_name"],
-                             len(assets), sum(item["download_count"] for item in assets))
+            state = update_report(args.output, products, now, history_path=history)
+            for product, releases in products.items():
+                LOG.info("%s: %d releases, %d assets", product, len(releases),
+                         sum(len(assets) for _, assets in releases))
+            LOG.info("History updated: %d run columns", len(state["runs"]))
             if portal:
                 portal.publish(args.output, expected)
-    except (ReportError, requests.RequestException, OSError, ValueError, KeyError) as exc:
+    except (ReportError, HistoryError, requests.RequestException, OSError, ValueError, KeyError) as exc:
         # requests exceptions can contain URLs; omit their content to avoid leaking secrets.
-        message = str(exc) if isinstance(exc, ReportError) else type(exc).__name__
+        message = str(exc) if isinstance(exc, (ReportError, HistoryError)) else type(exc).__name__
         LOG.error("%s", message)
         return 1
     return 0

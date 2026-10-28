@@ -6,16 +6,6 @@ on:
     - cron: '17 4 * * 1'
   workflow_dispatch:
     inputs:
-      release_tag:
-        description: 'Desktop Editors tag; empty = latest stable release'
-        type: string
-        required: false
-        default: ''
-      server_release_tag:
-        description: 'Document Server tag; empty = latest stable release'
-        type: string
-        required: false
-        default: ''
       publish:
         description: 'Update ONLYOFFICE-Download-Statistics.xlsx on nct2'
         type: boolean
@@ -62,11 +52,9 @@ jobs:
           DOCSPACE_API_KEY: ${{ secrets.DOCSPACE_API_KEY }}
           DOCSPACE_URL: ${{ vars.DOCSPACE_URL || 'https://nct2.onlyoffice.com' }}
           DOCSPACE_FOLDER_ID: ${{ vars.DOCSPACE_FOLDER_ID }}
-          RELEASE_TAG: ${{ inputs.release_tag || '' }}
-          SERVER_RELEASE_TAG: ${{ inputs.server_release_tag || '' }}
           PUBLISH: ${{ github.event_name == 'schedule' || inputs.publish }}
         run: |
-          args=(--tag "$RELEASE_TAG" --server-tag "$SERVER_RELEASE_TAG" --timezone Asia/Tashkent)
+          args=(--timezone Asia/Tashkent)
           if [[ "$PUBLISH" == "true" ]]; then
             args+=(--publish)
           fi

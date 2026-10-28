@@ -1,11 +1,8 @@
-from datetime import datetime, timezone
 import importlib.util
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
-from xml.etree import ElementTree as ET
-from zipfile import ZipFile
 
 SCRIPT = Path(__file__).resolve().parents[1] / "desktop_downloads.py"
 SPEC = importlib.util.spec_from_file_location("desktop_downloads", SCRIPT)
@@ -84,78 +81,6 @@ class CollectionTests(unittest.TestCase):
             report.collect(Mock(), "v10.1.0-beta")
 
 
-class WorkbookTests(unittest.TestCase):
-    def test_products_share_one_sheet_with_independent_totals(self):
-        desktop = [asset("DesktopEditors_x64.exe", 100)]
-        server = [asset("onlyoffice-documentserver.exe", 7),
-                  asset("onlyoffice-documentserver_amd64.deb", 11, 2)]
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "ONLYOFFICE-Download-Statistics.xlsx"
-            report.write_report(path, RELEASE, desktop, datetime.now(timezone.utc),
-                                server=(dict(RELEASE, tag_name="v9.9.9"), server))
-            with ZipFile(path) as archive:
-                book = ET.fromstring(archive.read("xl/workbook.xml"))
-                self.assertEqual(len(book.findall("s:sheets/s:sheet", NS)), 1)
-                xml = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
-                cells = {c.get("r"): c for c in xml.findall(".//s:c", NS)}
-                for cell, count in {"E9": 100, "E10": 100, "K9": 7, "K12": 11,
-                                    "K13": 18}.items():
-                    self.assertEqual(int(cells[cell].find("s:v", NS).text), count)
-                self.assertEqual(cells["K13"].find("s:f", NS).text, "SUM(K9,K12)")
-                self.assertEqual(cells["K9"].find("s:f", NS).text, "SUM(K8:K8)")
-                for name, cell in cells.items():
-                    formula = cell.find("s:f", NS)
-                    if name[0] in "GHIJK" and formula is not None:
-                        self.assertNotRegex(formula.text, r"\b[A-E][0-9]+")
-                strings = archive.read("xl/sharedStrings.xml").decode()
-                self.assertIn("Document Server v9.9.9", strings)
-                self.assertIn("Desktop Editors v10.0.0", strings)
-                self.assertNotIn("Download summary", strings)
-                self.assertNotIn("Total downloads", strings)
-                self.assertEqual(len(xml.findall("s:hyperlinks/s:hyperlink", NS)), 0)
-
-    def test_group_totals_without_summary_links_and_replacement(self):
-        items = [asset("DesktopEditors_x64.exe", 1234),
-                 asset("DesktopEditors_x86.exe", 567, 2),
-                 asset("DesktopEditors_arm64.exe", 89, 3),
-                 asset("DesktopEditors_x64.zip", 20, 4),
-                 asset("addon-mac-arm.zip", 10, 5),
-                 asset("onlyoffice-desktopeditors_amd64.deb", 30, 6)]
-        with tempfile.TemporaryDirectory() as directory:
-            path = Path(directory) / "ONLYOFFICE-Download-Statistics.xlsx"
-            report.write_report(path, RELEASE, items, datetime.now(timezone.utc))
-            with ZipFile(path) as archive:
-                book = ET.fromstring(archive.read("xl/workbook.xml"))
-                self.assertEqual(len(book.findall("s:sheets/s:sheet", NS)), 1)
-                xml = ET.fromstring(archive.read("xl/worksheets/sheet1.xml"))
-                strings = ET.fromstring(archive.read("xl/sharedStrings.xml"))
-                strings = ["".join(node.itertext()) for node in strings]
-                totals = {}
-                for row in xml.findall("s:sheetData/s:row", NS):
-                    cells = row.findall("s:c", NS)
-                    if len(cells) >= 2 and cells[0].get("t") == "s":
-                        label = strings[int(cells[0].find("s:v", NS).text)]
-                        if label.startswith("Total"):
-                            numeric = next(c for c in cells if c.get("r").startswith("E"))
-                            totals.setdefault(label, []).append(int(numeric.find("s:v", NS).text))
-                            self.assertIsNotNone(numeric.find("s:f", NS))
-                self.assertEqual(totals["Total Windows"], [1890, 20])
-                self.assertEqual(totals["Total — installations"], [1920])
-                self.assertEqual(totals["Total — updates"], [20])
-                self.assertEqual(totals["Total — add-ons"], [10])
-                self.assertNotIn("Total downloads", totals)
-                self.assertNotIn("Download summary", strings)
-                self.assertNotIn("Downloads by file", strings)
-                self.assertEqual(len(xml.findall("s:hyperlinks/s:hyperlink", NS)), 0)
-                self.assertNotIn("Link", strings)
-                self.assertNotIn("Download", strings)
-            report.write_report(path, dict(RELEASE, tag_name="v10.1.0"), items[:1],
-                                datetime.now(timezone.utc))
-            with ZipFile(path) as archive:
-                strings = archive.read("xl/sharedStrings.xml").decode()
-                self.assertIn("v10.1.0", strings)
-                self.assertNotIn("v10.0.0", strings)
-                self.assertNotIn("DesktopEditors_x86.exe", strings)
 
 
 class DocSpaceTests(unittest.TestCase):

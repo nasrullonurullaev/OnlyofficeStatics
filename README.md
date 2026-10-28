@@ -1,21 +1,25 @@
 # ONLYOFFICE Download Analytics
 
-Collects lifetime download counts for the latest and previous stable releases of
+Collects lifetime download counts for all published stable releases of
 `ONLYOFFICE/DesktopEditors` and `ONLYOFFICE/DocumentServer` and publishes
 `ONLYOFFICE-Download-Statistics.xlsx` to ONLYOFFICE DocSpace.
 The first run creates a new report; later runs update that filename.
 Existing files with other names are left untouched.
 
-Each run appends a dated sheet to the same workbook, preserving earlier snapshots.
-Desktop Editors occupies columns A–E and Document Server G–K. The latest releases
-are at the top; the previous releases are below them. Every release has separate
-file counts and platform/category totals: **Installations**, **Updates**, **Add-ons**.
-There is no separate summary, percentages, or hyperlinks.
+Two permanent visible sheets: **Desktop Editors** and **Document Server**.
+Rows contain releases (newest first), categories, platforms, and artifact names.
+Each run appends a date column on the right. New releases appear above older ones;
+old counts move together with their artifacts. No new dated sheets are created.
 
-Sheet names use `YYYY-MM-DD`; repeated runs on the same date add the time and,
-if needed, a numeric suffix. The newest sheet is selected when the file opens.
-The previous release is the most recently published stable release before the
-selected latest release. If none exists, only the available release is shown.
+History is matched by product, GitHub release ID, and asset ID, not row number or
+filename. New artifacts show `—` for previous dates; missing artifacts retain their
+history and show `—` for the current run. Zero is recorded as zero. Reuploaded files
+with a new ID are separate rows. Category and platform totals sum recorded counts.
+No separate summary, percentages, or hyperlinks.
+
+Dates use `YYYY-MM-DD`; repeated runs add the time and a suffix if needed.
+A hidden `_history` sheet stores identities and raw counts. Do not edit or delete it.
+Start this format with a new document; old snapshot reports are not migrated.
 
 ## Setup
 
@@ -35,12 +39,9 @@ able to reach DocSpace.
 
 Open **Actions → ONLYOFFICE download statistics → Run workflow**.
 
-- Leave `release_tag` empty for the latest Desktop Editors release; a tag pins the top release.
-- `server_release_tag` selects the top Document Server release independently.
-- Each product's previous stable release is selected automatically.
 - Disable `publish` to build without uploading. DocSpace credentials are not required for this mode.
 
-Scheduled runs collect both releases of each product every Monday at **04:17 UTC**
+Scheduled runs collect all stable releases every Monday at **04:17 UTC**
 (09:17 Asia/Tashkent), from the default branch. GitHub may delay scheduled runs.
 Reports are not committed or uploaded as Actions artifacts.
 
@@ -54,7 +55,7 @@ Reports are not committed or uploaded as Actions artifacts.
 
 ## Upload errors
 
-The current workbook is downloaded before appending the next snapshot.
+The current workbook is downloaded before adding the next date column.
 Download or workbook-read errors stop publication to protect the existing history.
 The script checks the file ID and version before and after uploading.
 Duplicate names or a new file ID cause the run to fail. Resolve duplicates and
@@ -68,10 +69,10 @@ Requires Python 3.10+.
 ```sh
 python -m pip install -r requirements.in
 python desktop_downloads.py
-python -m unittest discover -s tests -p test_desktop_downloads.py -v
+python -m unittest discover -s tests -v
 ```
 
 Output: `reports/ONLYOFFICE-Download-Statistics.xlsx`. To publish, set the environment variables
 listed above and add `--publish`. `.gitignore` excludes reports, Python caches,
-and the local virtual environment. Local runs append to the existing output file;
+and the local virtual environment. Local runs append a column to the existing output file;
 publishing runs always use the workbook downloaded from DocSpace as their history.
