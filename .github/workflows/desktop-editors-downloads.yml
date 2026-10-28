@@ -1,0 +1,67 @@
+name: Desktop Editors downloads
+
+on:
+  schedule:
+    # Mondays at 09:17 Asia/Tashkent (04:17 UTC).
+    - cron: '17 4 * * 1'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: 'Release tag; empty = latest stable release'
+        type: string
+        required: false
+        default: ''
+      publish:
+        description: 'Update DesktopEditors.xlsx on nct2'
+        type: boolean
+        required: true
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  # All branches and manual/scheduled runs share the same remote report.
+  group: desktop-editors-downloads-nct2
+  cancel-in-progress: false
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: requirements.in
+
+      - name: Install dependencies
+        run: python -m pip install --disable-pip-version-check -r requirements.in
+
+      - name: Test
+        run: python -m unittest discover -s tests -p test_desktop_downloads.py -v
+
+      - name: Build report and update nct2
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          DOCSPACE_API_KEY: ${{ secrets.DOCSPACE_API_KEY }}
+          DOCSPACE_URL: ${{ vars.DOCSPACE_URL || 'https://nct2.onlyoffice.com' }}
+          DOCSPACE_FOLDER_ID: ${{ vars.DOCSPACE_FOLDER_ID }}
+          RELEASE_TAG: ${{ inputs.release_tag || '' }}
+          PUBLISH: ${{ github.event_name == 'schedule' || inputs.publish }}
+        run: |
+          args=(--tag "$RELEASE_TAG" --timezone Asia/Tashkent)
+          if [[ "$PUBLISH" == "true" ]]; then
+            args+=(--publish)
+          fi
+          python desktop_downloads.py "${args[@]}"
