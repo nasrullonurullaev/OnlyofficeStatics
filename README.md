@@ -51,7 +51,8 @@ Reports are not committed or uploaded as Actions artifacts.
 ## Report rules
 
 - `addon-*`: Add-ons; other `.zip` files: Updates; remaining packages: Installations.
-- Installations include portable builds and Linux help packages.
+- Installations include portable builds and Linux help packages, except `.tar.xz` archives.
+- Linux `.tar.xz` archives are excluded from rows and totals for both products.
 - Unknown platforms, invalid counters, or duplicate asset IDs stop publication.
 - Drafts, prereleases, and automatic source archives are excluded.
 - Empty categories are omitted from file details. A collection error for either product stops publication.

@@ -66,6 +66,19 @@ class CollectionTests(unittest.TestCase):
         self.assertEqual(get.call_args.kwargs["params"]["page"], 2)
 
     @patch.object(report, "request_json")
+    def test_linux_tar_xz_archives_are_excluded(self, get):
+        for repository in ('ONLYOFFICE/DesktopEditors', 'ONLYOFFICE/DocumentServer'):
+            with self.subTest(repository=repository):
+                get.side_effect = [RELEASE, [
+                    asset('onlyoffice-desktopeditors-aarch64.tar.xz', 109, 1),
+                    asset('onlyoffice-desktopeditors-help-any.TAR.XZ', 103, 2),
+                    asset('onlyoffice-desktopeditors_amd64.deb', 50, 3),
+                    asset('onlyoffice-desktopeditors.tar.gz', 20, 4)]]
+                _, assets = report.collect(Mock(), repository=repository)
+                self.assertEqual([item['id'] for item in assets], [3, 4])
+                self.assertEqual(sum(item['download_count'] for item in assets), 70)
+
+    @patch.object(report, "request_json")
     def test_invalid_input_preserves_existing_report(self, get):
         for items in ([], [asset("DesktopEditors_x64.exe", -1)],
                       [asset("DesktopEditors_x64.exe", True)],

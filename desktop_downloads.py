@@ -109,7 +109,8 @@ def collect_assets(client, release, repository, allow_empty=False):
         if type(count) is not int or count < 0 or asset.get("state") != "uploaded":
             raise ReportError(f"Invalid counter or incomplete asset: {asset['name']}")
         asset["category"] = classify(asset["name"])
-    return assets
+    return [asset for asset in assets
+            if not (asset['category'][1] == 'Linux' and asset['name'].lower().endswith('.tar.xz'))]
 
 
 def collect_tracked(client, repository=REPOSITORY, known_releases=None):
